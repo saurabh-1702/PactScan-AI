@@ -36,6 +36,15 @@ async def lifespan(_app: FastAPI):
     except Exception as exc:  # noqa: BLE001 - scaffold: log, don't crash
         logger.warning("PostgreSQL unreachable: %s", exc)
 
+    # --- Seed playbook + regulations (idempotent) ---
+    try:
+        from app.agents.detect.graph_store import get_graph_store
+        from app.agents.detect.seed_data import seed
+
+        seed(get_graph_store())
+    except Exception as exc:  # noqa: BLE001 - non-fatal: dashboard/detect degrade gracefully
+        logger.warning("Playbook/regulation seeding skipped: %s", exc)
+
     yield
 
     neo4j_client.close_driver()
@@ -50,6 +59,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+from app.api.detect import router as detect_router  # noqa: E402
+
+app.include_router(detect_router)
 
 
 @app.get("/health")

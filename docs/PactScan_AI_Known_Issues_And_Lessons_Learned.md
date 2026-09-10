@@ -147,3 +147,25 @@ This was a deliberate final decision made to fit a tight build timeline while st
 
 ### 9.5 — Docker Desktop must be started manually and takes minutes
 **Note:** on this machine Docker Desktop is not set to auto-start. Launch `"C:\Program Files\Docker\Docker\Docker Desktop.exe"` and expect the engine to take 2–5 minutes before `docker info` succeeds (WSL2 backend spin-up). `docker` commands hang rather than fail fast during this window — wait, don't retry in a tight loop.
+
+---
+
+## 10. Issues found during the current build — Phase 1 (2026-09-11)
+
+### 10.1 — LlamaParse: use `llama-cloud>=1.0`, not `llama-cloud-services`
+**The bug/confusion:** `pip install llama-cloud-services` installs a package that is **deprecated** (maintained only until May 2026) and hard-pins `llama-cloud==0.1.46`. The Phase 1 prompt's documented call — `client.parsing.parse(...)` — is the API of the *new* `llama-cloud>=1.0` package, not the old one. Installing both produces a dependency conflict.
+**The fix, applied:** `requirements.txt` pins `llama-cloud==2.16.0` only; `llama-cloud-services` is not installed. `app/agents/detect/ingest.py` uses `from llama_cloud import LlamaCloud, file_from_path` then `client.parsing.parse(tier="cost_effective", version="latest", upload_file=..., output_options=...)`. Per-page markdown extraction from the response is best-effort (`_parsed_document_from_llama_result`) and will raise loudly if the response shape changes — adjust that one function if live testing hits it.
+
+### 10.2 — Gemini Interactions API is real in `google-genai` 2.22.0
+**Note (not a bug):** earlier planning assumed the prompt's "Interactions API" might be fictional. It is not — `client.interactions.create(...)` exists, takes `model` / `input` / `system_instruction` / `response_format=TextResponseFormat(type="text", mime_type="application/json", schema_=<json_schema>)`, and returns an object with `.output_text`. `app/llm/client._call_gemini()` is the single call site; a provider or call-shape change is a one-function edit there.
+
+### 10.3 — Cypher: `size()` not `length()` for variable-length relationship lists
+**The bug:** `MATCH p=(a)-[rels:OVERRIDES*1..3]->(b) ... RETURN length(rels)` fails on Neo4j 5 with `Type mismatch: expected Path but was List<Relationship>`. `length()` only accepts a Path.
+**The fix:** use `size(rels)` for the hop count. Applied in `graph_store.Neo4jGraphStore.get_overriders`.
+
+### 10.4 — pytest-asyncio 0.25 is very noisy on Python 3.14
+**The bug:** `pytest-asyncio==0.25.0` (the Phase 0/1 prompt pin) emits ~15 `asyncio.get_event_loop_policy is deprecated` warnings *per async test* on Python 3.14 — ~88 warnings for a small suite.
+**The fix, applied:** bumped to `pytest-asyncio==1.4.0` (which pulled `pytest==9.1.1`). Suite passes clean. `pytest.ini` sets `asyncio_mode = strict` + `asyncio_default_fixture_loop_scope = function`.
+
+### 10.5 — Mocked tests must not require Docker/Neo4j
+**Pattern established:** the Detect agent's graph access goes through a `GraphStore` interface (`app/agents/detect/graph_store.py`) with `Neo4jGraphStore` and `InMemoryGraphStore`. All mocked tests use the in-memory store; only `-m live` tests and the running API touch Neo4j. Keep this split for every later phase's agent — a mocked `pytest -v` run must never need a container up.
