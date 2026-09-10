@@ -31,18 +31,16 @@ from app.models.clause import (
 
 logger = logging.getLogger("pactscan.detect.agent")
 
-# --- which rules / regulations are relevant to which clause type ----------
-_LIABILITY = ClauseType.LIMITATION_OF_LIABILITY
-_DP = ClauseType.DATA_PROCESSING
-
+# A clause type is only NLI-checked against the rules / regulations that plausibly
+# govern that exact subject. Deliberately narrow — checking every data-processing
+# clause against every regulation makes a real LLM over-flag "this clause doesn't
+# ALSO restate obligation X".
+_LIABILITY_TYPES = (ClauseType.LIMITATION_OF_LIABILITY, ClauseType.INDEMNIFICATION)
 RELEVANT_PLAYBOOK: dict[ClauseType, list[str]] = {
     ClauseType.LIMITATION_OF_LIABILITY: ["pb_liability_cap_data_breach"],
     ClauseType.INDEMNIFICATION: ["pb_liability_cap_data_breach"],
     ClauseType.BREACH_NOTIFICATION: ["pb_breach_notification_window"],
-    ClauseType.DATA_PROCESSING: [
-        "pb_mandatory_dpa_fields",
-        "pb_verifiable_parental_consent",
-    ],
+    ClauseType.DATA_PROCESSING: ["pb_verifiable_parental_consent"],
     ClauseType.CONFIDENTIALITY: ["pb_verifiable_parental_consent"],
     ClauseType.SUBPROCESSOR_OBLIGATIONS: ["pb_subprocessor_approval"],
     ClauseType.DATA_LOCALIZATION_CROSS_BORDER_TRANSFER: ["pb_data_localization_transfer"],
@@ -52,26 +50,31 @@ RELEVANT_PLAYBOOK: dict[ClauseType, list[str]] = {
 }
 
 RELEVANT_REGULATION: dict[ClauseType, list[str]] = {
-    ClauseType.DATA_PROCESSING: ["dpdp_s9", "dpdp_s4", "dpdp_s8", "gdpr_art8", "gdpr_art6"],
+    ClauseType.DATA_PROCESSING: ["dpdp_s9", "gdpr_art8"],
     ClauseType.CONFIDENTIALITY: ["dpdp_s9", "gdpr_art8"],
     ClauseType.BREACH_NOTIFICATION: ["dpdp_s8"],
-    ClauseType.SUBPROCESSOR_OBLIGATIONS: ["dpdp_s8"],
-    ClauseType.DATA_LOCALIZATION_CROSS_BORDER_TRANSFER: ["dpdp_s8"],
 }
 
+# NEUTRAL (clause is silent) becomes a finding ONLY for these requirements, and
+# ONLY when no clause anywhere in the contract ENTAILS them — i.e. a mandatory
+# protection the whole agreement omits. Every other NEUTRAL is just "not relevant
+# to this clause" and produces nothing.
+_MANDATORY_GAP_REQS = {"dpdp_s9", "gdpr_art8"}
+
 _NLI_SYSTEM_PROMPT = (
-    "You perform natural-language inference for contract compliance. Given a contract "
-    "clause (its effective text, which may already incorporate later overriding "
-    "provisions) and a numbered list of rules / regulatory requirements, classify the "
-    "clause against EACH requirement independently as:\n"
-    "  ENTAILS    - the clause clearly satisfies the requirement\n"
-    "  CONTRADICTS - the clause violates or is incompatible with the requirement\n"
-    "  NEUTRAL    - the clause does not address the requirement at all\n"
-    "A clause that is vague or silent on a specific mandatory protection (for example "
-    "children's data / verifiable parental consent) where that protection is clearly "
-    "required CONTRADICTS the requirement rather than being NEUTRAL, because the "
-    "agreement would permit non-compliant processing. Return exactly one result per "
-    "requirement, echoing back its requirement_id."
+    "You perform natural-language inference for contract-compliance review. You are "
+    "given ONE contract clause (its effective text, which may already incorporate "
+    "later overriding provisions) and a list of requirements. Classify the clause "
+    "against EACH requirement independently:\n"
+    "  ENTAILS     - the clause affirmatively satisfies this requirement\n"
+    "  CONTRADICTS - the clause affirmatively permits or requires something this "
+    "requirement forbids, OR it governs exactly this requirement's subject but omits "
+    "a protection the requirement makes mandatory\n"
+    "  NEUTRAL     - the clause simply does not deal with this requirement's subject\n"
+    "Be conservative. A clause that is about a different topic, or that is merely "
+    "silent on an adjacent obligation, is NEUTRAL — not CONTRADICTS. Only use "
+    "CONTRADICTS when the clause itself creates the compliance problem. Return exactly "
+    "one result per requirement, echoing back its requirement_id."
 )
 
 
@@ -122,17 +125,18 @@ async def run_detect(
 
     findings: list[Finding] = []
     edges: list[tuple[str, str, str]] = []
+    # per-requirement NLI verdicts across the whole contract, for cross-clause logic
+    verdicts_by_req: dict[str, list[NLILabel]] = {}
+    # (clause, req_id, kind, label, item, override_chain) for NEUTRAL gaps deferred to pass 2
+    deferred_gaps: list[tuple] = []
 
     for clause in clauses:
         overriders = store.get_overriders(clause.clause_id, max_hops=3, tenant_id=tenant_id)
         override_chain = [clause.clause_id] + [o["id"] for o in overriders]
         effective_text = _effective_text(clause, overriders)
 
-        # (4) buried cross-document override of a liability clause
-        if overriders and clause.clause_type in (
-            ClauseType.LIMITATION_OF_LIABILITY,
-            ClauseType.INDEMNIFICATION,
-        ):
+        # (4) buried cross-document override of a liability clause — deterministic
+        if overriders and clause.clause_type in _LIABILITY_TYPES:
             pages = sorted({clause.page_number} | {o["page_number"] for o in overriders})
             scopes = ", ".join(sorted({o["scope"] for o in overriders if o.get("scope")}))
             findings.append(
@@ -169,14 +173,8 @@ async def run_detect(
             reg = regulations.get(reg_id)
             if reg:
                 requirements.append(
-                    (
-                        reg_id,
-                        "regulation",
-                        f"{reg['regulation_name']} {reg['section']}",
-                        reg["text"],
-                    )
+                    (reg_id, "regulation", f"{reg['regulation_name']} {reg['section']}", reg["text"])
                 )
-
         if not requirements:
             continue
 
@@ -186,15 +184,52 @@ async def run_detect(
             item = by_id.get(req_id)
             if item is None:
                 continue
-            f = _maybe_finding(
-                contract_id, clause, override_chain, item, req_id, label, kind=kind
-            )
-            if f:
-                findings.append(f)
-                rel = "VIOLATES" if kind == "regulation" else "CONTRADICTS"
-                edges.append((clause.clause_id, rel, req_id))
+            verdicts_by_req.setdefault(req_id, []).append(item.label)
 
-    # de-dup by finding_id (a clause could hit the same rule twice via aliasing)
+            if item.label == NLILabel.CONTRADICTS:
+                findings.append(
+                    _finding_from(contract_id, clause, override_chain, item, req_id, label, kind)
+                )
+                edges.append(
+                    (clause.clause_id, "VIOLATES" if kind == "regulation" else "CONTRADICTS", req_id)
+                )
+            elif item.label == NLILabel.NEUTRAL and req_id in _MANDATORY_GAP_REQS:
+                deferred_gaps.append(
+                    (clause, req_id, kind, label, item, override_chain)
+                )
+
+    # pass 2 — a NEUTRAL on a mandatory-protection requirement is a finding only if
+    # NOTHING in the whole contract ENTAILS that requirement
+    seen_gap_reqs: set[str] = set()
+    for clause, req_id, kind, label, item, override_chain in deferred_gaps:
+        verdicts = verdicts_by_req.get(req_id, [])
+        if NLILabel.ENTAILS in verdicts or NLILabel.CONTRADICTS in verdicts:
+            continue  # already covered, or already flagged elsewhere
+        if req_id in seen_gap_reqs:
+            continue
+        seen_gap_reqs.add(req_id)
+        severity = Severity.HIGH if kind == "regulation" else Severity.MEDIUM
+        findings.append(
+            Finding(
+                finding_id=_finding_id(contract_id, clause.clause_id, req_id),
+                clause_id=clause.clause_id,
+                clause_type=clause.clause_type,
+                page_number=clause.page_number,
+                section_header=clause.section_header,
+                severity=severity,
+                rule_or_regulation_violated=label,
+                explanation=(
+                    f"No clause in this contract addresses the requirement: {item.explanation}"
+                ),
+                confidence=item.confidence,
+                override_chain=override_chain if len(override_chain) > 1 else [],
+            )
+        )
+        edges.append(
+            (clause.clause_id, "VIOLATES" if kind == "regulation" else "CONTRADICTS", req_id)
+        )
+
+    # de-dup by finding_id
     unique: dict[str, Finding] = {}
     for f in findings:
         unique.setdefault(f.finding_id, f)
@@ -209,7 +244,7 @@ async def run_detect(
     return result
 
 
-def _maybe_finding(
+def _finding_from(
     contract_id: str,
     clause: ExtractedClause,
     override_chain: list[str],
@@ -217,17 +252,8 @@ def _maybe_finding(
     rule_id: str,
     rule_label: str,
     kind: str,
-) -> Finding | None:
-    if nli.label == NLILabel.ENTAILS:
-        return None
-
-    if nli.label == NLILabel.CONTRADICTS:
-        severity = Severity.HIGH if kind == "regulation" else Severity.MEDIUM
-    else:  # NEUTRAL — only a finding when the requirement is clearly relevant
-        if nli.confidence != ConfidenceLevel.high:
-            return None
-        severity = Severity.MEDIUM if kind == "regulation" else Severity.LOW
-
+) -> Finding:
+    severity = Severity.HIGH if kind == "regulation" else Severity.MEDIUM
     return Finding(
         finding_id=_finding_id(contract_id, clause.clause_id, rule_id),
         clause_id=clause.clause_id,

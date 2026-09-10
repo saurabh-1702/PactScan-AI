@@ -6,13 +6,18 @@ from __future__ import annotations
 class QuotaOrRateLimitError(Exception):
     """A quota / rate-limit error (HTTP 429, RESOURCE_EXHAUSTED).
 
-    This is the *only* error type that advances the model-tier / account
-    fallback loop. Every other exception propagates immediately so real bugs
-    (malformed request, invalid schema, auth failure) are never masked as
-    quota problems.
+    Advances the model-tier / account / provider fallback loop and puts that
+    (provider, account, model) tuple on cooldown.
+    """
+
+
+class TransientServerError(Exception):
+    """A transient upstream error (HTTP 5xx, "model overloaded", "try again
+    later"). Treated like a rate-limit for fallback purposes — advance and put
+    the tuple on a short cooldown rather than failing the whole request.
     """
 
 
 class AllLLMTiersExhaustedError(Exception):
-    """Raised when every model tier under every configured account returned a
-    quota / rate-limit error for a single call."""
+    """Every provider / account / model tier was exhausted or on cooldown for a
+    single call."""

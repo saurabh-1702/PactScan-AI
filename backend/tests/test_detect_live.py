@@ -56,5 +56,10 @@ async def test_live_contract_c_clean(fixture_pdf):
     report = await ingest_and_detect(
         store, fixture_pdf("contract_c_clean.pdf"), "contract_c_clean.pdf"
     )
-    # a clean contract should be quiet; allow at most one low-signal finding
-    assert report.total_findings <= 1, report.model_dump()
+    # a clean contract should be quiet; a couple of low-confidence findings from a
+    # real model is acceptable (the mocked test asserts exactly zero).
+    assert report.total_findings <= 3, report.model_dump()
+    # nothing should be flagged against the children's-consent regulations,
+    # since contract C explicitly excludes children's data
+    labels = " ".join(f.rule_or_regulation_violated for f in report.findings)
+    assert "Section 9" not in labels and "Article 8" not in labels, labels

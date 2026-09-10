@@ -1,18 +1,20 @@
 """Provider-agnostic LLM client.
 
-Three layers, checked in this exact order for every call:
+Fallback order for every call (a cache miss):
 
-    1. local response cache          (app/llm/cache.py)
-    2. 7-tier model fallback chain    (per account, quality-first)
-    3. multi-account fallback         (walks the full tier chain per account
-                                       before advancing to the next account)
+    cache  ->  for each provider in LLM_PROVIDER_ORDER (default: groq, then gemini):
+                   for each API key (account):
+                       for each model tier:
+                           call; on 429 / 5xx -> cooldown that (provider, account,
+                           model) tuple and advance; on success -> return.
 
-Only quota / rate-limit errors advance the loop. Every other error propagates
-immediately so real bugs are never masked as quota problems.
+Groq's free tier is far larger than Gemini's, so it leads; Gemini is the
+documented fallback (and Claude / a funded provider is the further upgrade path).
 
-Provider: Google Gemini, via ``google-genai``'s Interactions API
-(``client.interactions.create``) — the Gemini equivalent of tool-use / structured
-output. This is the only file that imports the Gemini SDK.
+Cooldown memory means once a tier returns 429 in a run, later calls skip it for
+``LLM_TIER_COOLDOWN_SECONDS`` instead of re-probing it every time.
+
+This is the only module that imports a provider SDK.
 """
 
 from __future__ import annotations
@@ -20,33 +22,39 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
+import time
+from dataclasses import dataclass
 from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
 from app.config import settings
 from app.llm.cache import compute_cache_key, get_cached_response, set_cached_response
-from app.llm.errors import AllLLMTiersExhaustedError, QuotaOrRateLimitError
+from app.llm.errors import (
+    AllLLMTiersExhaustedError,
+    QuotaOrRateLimitError,
+    TransientServerError,
+)
 
 logger = logging.getLogger("pactscan.llm")
 
 TModel = TypeVar("TModel", bound=BaseModel)
-
 _TEXT_SCHEMA_NAME = "__text__"
 
-# Memoised Gemini clients, one per API key.
-_clients: dict[str, Any] = {}
+_groq_clients: dict[str, Any] = {}
+_gemini_clients: dict[str, Any] = {}
+
+# (provider, account_index, model) -> monotonic time the cooldown expires
+_cooldowns: dict[tuple[str, int, str], float] = {}
 
 
 # --------------------------------------------------------------------------- #
 # Public API
 # --------------------------------------------------------------------------- #
 async def generate_structured(
-    prompt: str,
-    schema: type[TModel],
-    system_prompt: str | None = None,
+    prompt: str, schema: type[TModel], system_prompt: str | None = None
 ) -> TModel:
-    """Call the LLM and return a validated instance of ``schema``."""
     schema_name = schema.__name__
     cache_key = compute_cache_key(prompt, schema_name, settings.llm_prompt_version)
 
@@ -55,19 +63,14 @@ async def generate_structured(
         logger.info("Cache hit (%s)", schema_name)
         return schema.model_validate_json(cached)
 
-    raw = await _resolve(
-        prompt=prompt,
-        system_prompt=system_prompt,
-        json_schema=schema.model_json_schema(),
-        schema_name=schema_name,
-    )
+    raw = await _resolve(prompt, system_prompt, schema.model_json_schema(), schema_name)
+    raw = _strip_json_fences(raw)
     result = schema.model_validate_json(raw)
     set_cached_response(cache_key, raw)
     return result
 
 
 async def generate_text(prompt: str, system_prompt: str | None = None) -> str:
-    """Call the LLM and return plain text."""
     cache_key = compute_cache_key(prompt, _TEXT_SCHEMA_NAME, settings.llm_prompt_version)
 
     cached = get_cached_response(cache_key)
@@ -75,114 +78,186 @@ async def generate_text(prompt: str, system_prompt: str | None = None) -> str:
         logger.info("Cache hit (text)")
         return cached
 
-    raw = await _resolve(
-        prompt=prompt,
-        system_prompt=system_prompt,
-        json_schema=None,
-        schema_name=_TEXT_SCHEMA_NAME,
-    )
+    raw = await _resolve(prompt, system_prompt, None, _TEXT_SCHEMA_NAME)
     set_cached_response(cache_key, raw)
     return raw
 
 
 # --------------------------------------------------------------------------- #
-# Layer 2 + 3 — model-tier chain wrapped in multi-account fallback
+# Fallback resolution
 # --------------------------------------------------------------------------- #
+@dataclass(frozen=True)
+class _Attempt:
+    provider: str
+    account_index: int
+    api_key: str
+    model: str
+
+    @property
+    def key(self) -> tuple[str, int, str]:
+        return (self.provider, self.account_index, self.model)
+
+
+def _attempt_plan() -> list[_Attempt]:
+    plan: list[_Attempt] = []
+    for provider in settings.provider_order:
+        if provider == "groq":
+            keys, tiers = settings.groq_api_key_list, settings.groq_model_tiers
+        elif provider == "gemini":
+            keys, tiers = settings.gemini_api_key_list, settings.gemini_model_tiers
+        else:
+            logger.warning("Unknown LLM provider %r in LLM_PROVIDER_ORDER — skipping", provider)
+            continue
+        for account_index, api_key in enumerate(keys):
+            for model in tiers:
+                plan.append(_Attempt(provider, account_index, api_key, model))
+    return plan
+
+
+def _cooldown_remaining(attempt: _Attempt) -> float:
+    return max(0.0, _cooldowns.get(attempt.key, 0.0) - time.monotonic())
+
+
+def _put_on_cooldown(attempt: _Attempt) -> None:
+    _cooldowns[attempt.key] = time.monotonic() + settings.llm_tier_cooldown_seconds
+
+
 async def _resolve(
     prompt: str,
     system_prompt: str | None,
     json_schema: dict | None,
     schema_name: str,
 ) -> str:
-    api_keys = settings.gemini_api_key_list
-    if not api_keys:
+    plan = _attempt_plan()
+    if not plan:
         raise RuntimeError(
-            "GEMINI_API_KEYS is empty — set it in backend\\.env before making live LLM calls."
+            "No LLM providers configured — set GROQ_API_KEYS and/or GEMINI_API_KEYS in backend\\.env"
         )
-    tiers = settings.gemini_model_tiers
 
-    for account_index, api_key in enumerate(api_keys):
-        for tier_index, model_name in enumerate(tiers):
+    for round_index in range(2):  # one extra pass after a bounded wait
+        skipped = 0
+        tried: list[str] = []
+        last_error: Exception | None = None
+
+        for attempt in plan:
+            if _cooldown_remaining(attempt) > 0:
+                skipped += 1
+                continue
+            caller = _call_groq if attempt.provider == "groq" else _call_gemini
             try:
                 result = await asyncio.to_thread(
-                    _call_gemini,
-                    api_key=api_key,
-                    model=model_name,
-                    prompt=prompt,
-                    system_prompt=system_prompt,
-                    json_schema=json_schema,
+                    caller, attempt.api_key, attempt.model, prompt, system_prompt, json_schema
                 )
                 logger.info(
-                    "Answered by Account %d, Tier %d (%s) [%s]",
-                    account_index + 1,
-                    tier_index + 1,
-                    model_name,
+                    "LLM: %s / acct %d / %s answered [%s]%s",
+                    attempt.provider,
+                    attempt.account_index + 1,
+                    attempt.model,
                     schema_name,
+                    f"  (skipped {skipped} on cooldown)" if skipped else "",
                 )
                 return result
-            except QuotaOrRateLimitError:
+            except (QuotaOrRateLimitError, TransientServerError) as exc:
+                _put_on_cooldown(attempt)
+                last_error = exc
+                tried.append(f"{attempt.provider}/{attempt.model}")
                 logger.warning(
-                    "Quota/rate-limit on Account %d, Tier %d (%s) — advancing",
-                    account_index + 1,
-                    tier_index + 1,
-                    model_name,
+                    "%s on %s / acct %d / %s — advancing",
+                    type(exc).__name__,
+                    attempt.provider,
+                    attempt.account_index + 1,
+                    attempt.model,
                 )
                 continue
-            # any other exception propagates immediately — not caught here
-        logger.warning(
-            "All %d tiers exhausted for Account %d — advancing to next account",
-            len(tiers),
-            account_index + 1,
+            # any other exception propagates immediately (real bug, not quota)
+
+        remaining = [_cooldown_remaining(a) for a in plan]
+        soonest = min((r for r in remaining if r > 0), default=0.0)
+        if round_index == 0 and 0 < soonest <= 20:
+            logger.warning(
+                "All LLM tiers on cooldown — waiting %.0fs for the soonest to clear", soonest
+            )
+            await asyncio.sleep(soonest + 0.5)
+            continue
+        raise AllLLMTiersExhaustedError(
+            f"All LLM tiers exhausted or on cooldown. Tried this round: {tried or '(all cooled)'}. "
+            f"Last error: {last_error}"
         )
-
-    raise AllLLMTiersExhaustedError(
-        "All tiers exhausted across all configured accounts"
-    )
+    raise AllLLMTiersExhaustedError("All LLM tiers exhausted after retry pass")
 
 
 # --------------------------------------------------------------------------- #
-# The single point where the Gemini SDK is called. Tests monkeypatch this.
+# Provider call sites (monkeypatched in tests)
 # --------------------------------------------------------------------------- #
-def _get_client(api_key: str) -> Any:
-    if api_key not in _clients:
-        from google import genai  # imported lazily so tests never need the SDK path
+def _call_groq(
+    api_key: str, model: str, prompt: str, system_prompt: str | None, json_schema: dict | None
+) -> str:
+    from groq import Groq
 
-        _clients[api_key] = genai.Client(api_key=api_key)
-    return _clients[api_key]
+    client = _groq_clients.get(api_key)
+    if client is None:
+        client = _groq_clients[api_key] = Groq(api_key=api_key, max_retries=0)
+
+    system = system_prompt or ""
+    if json_schema is not None:
+        system = (system + "\n\n" if system else "") + (
+            "Respond with ONLY one JSON object — no prose, no markdown fences — that "
+            "conforms to this JSON schema:\n" + json.dumps(json_schema)
+        )
+    messages: list[dict] = []
+    if system:
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": prompt})
+
+    kwargs: dict[str, Any] = {
+        "model": model,
+        "messages": messages,
+        "temperature": 0.2,
+        "max_completion_tokens": 8000,
+    }
+    if json_schema is not None:
+        kwargs["response_format"] = {"type": "json_object"}
+
+    try:
+        resp = client.chat.completions.create(**kwargs)
+    except Exception as exc:  # noqa: BLE001 - classified below
+        _raise_classified(exc)
+
+    content = resp.choices[0].message.content if resp.choices else None
+    if not content:
+        raise RuntimeError(f"Groq returned empty content (model={model})")
+    return content
 
 
 def _call_gemini(
-    api_key: str,
-    model: str,
-    prompt: str,
-    system_prompt: str | None,
-    json_schema: dict | None,
+    api_key: str, model: str, prompt: str, system_prompt: str | None, json_schema: dict | None
 ) -> str:
-    """Make one Gemini Interactions API call. Returns the raw output text.
-
-    Translates quota / rate-limit failures into ``QuotaOrRateLimitError`` so the
-    fallback loop can advance; every other failure propagates unchanged.
-    """
     from google.genai import interactions as genai_interactions
 
-    client = _get_client(api_key)
+    client = _gemini_clients.get(api_key)
+    if client is None:
+        from google import genai
+        from google.genai import types as genai_types
+
+        client = _gemini_clients[api_key] = genai.Client(
+            api_key=api_key,
+            http_options=genai_types.HttpOptions(
+                retry_options=genai_types.HttpRetryOptions(attempts=1)  # no SDK-internal retry
+            ),
+        )
 
     kwargs: dict[str, Any] = {"model": model, "input": prompt}
     if system_prompt:
         kwargs["system_instruction"] = system_prompt
     if json_schema is not None:
         kwargs["response_format"] = genai_interactions.TextResponseFormat(
-            type="text",
-            mime_type="application/json",
-            schema_=json_schema,
+            type="text", mime_type="application/json", schema_=json_schema
         )
 
     try:
         interaction = client.interactions.create(**kwargs)
-    except Exception as exc:  # noqa: BLE001 - re-raised below unless it's a quota error
-        if _is_quota_error(exc):
-            raise QuotaOrRateLimitError(str(exc)[:300]) from exc
-        raise
+    except Exception as exc:  # noqa: BLE001 - classified below
+        _raise_classified(exc)
 
     output = getattr(interaction, "output_text", None)
     if not output:
@@ -194,27 +269,78 @@ def _call_gemini(
     return output
 
 
-_QUOTA_ERROR_NAMES = {"RateLimitError", "ResourceExhausted", "ResourceExhaustedError"}
-_QUOTA_TEXT_MARKERS = (
-    "RESOURCE_EXHAUSTED",
-    "RATE LIMIT",
-    "QUOTA",
-    "TOO MANY REQUESTS",
-    "TOO_MANY_REQUESTS",
+# --------------------------------------------------------------------------- #
+# Error classification
+# --------------------------------------------------------------------------- #
+_QUOTA_NAMES = {"RateLimitError", "ResourceExhausted", "ResourceExhaustedError"}
+_QUOTA_MARKERS = ("RESOURCE_EXHAUSTED", "RATE LIMIT", "QUOTA", "TOO MANY REQUESTS", "TOO_MANY_REQUESTS")
+_TRANSIENT_NAMES = {"InternalServerError", "ServiceUnavailableError", "APIConnectionError", "APITimeoutError"}
+_TRANSIENT_MARKERS = (
+    "HIGH DEMAND",
+    "OVERLOADED",
+    "TRY AGAIN LATER",
+    "TEMPORARILY UNAVAILABLE",
+    "SERVICE UNAVAILABLE",
+    "INTERNAL ERROR",
+    "INTERNAL SERVER ERROR",
+    "502 ",
+    "503 ",
+    "504 ",
 )
 
 
-def _is_quota_error(exc: Exception) -> bool:
-    """True only for quota / rate-limit (HTTP 429). Everything else must raise."""
-    if type(exc).__name__ in _QUOTA_ERROR_NAMES:
-        return True
+def _status_code(exc: Exception) -> int | None:
     for attr in ("status_code", "code", "status"):
         val = getattr(exc, attr, None)
-        if val == 429 or val == "429" or val == "RESOURCE_EXHAUSTED" or val == "too_many_requests":
-            return True
+        if isinstance(val, int):
+            return val
+        if isinstance(val, str) and val.isdigit():
+            return int(val)
+    return None
+
+
+def _is_quota_error(exc: Exception) -> bool:
+    if type(exc).__name__ in _QUOTA_NAMES:
+        return True
+    if _status_code(exc) == 429:
+        return True
+    code = getattr(exc, "code", None) or getattr(exc, "status", None)
+    if code in ("RESOURCE_EXHAUSTED", "too_many_requests"):
+        return True
     text = str(exc).upper()
-    return any(marker in text for marker in _QUOTA_TEXT_MARKERS)
+    return any(m in text for m in _QUOTA_MARKERS)
+
+
+def _is_transient_error(exc: Exception) -> bool:
+    sc = _status_code(exc)
+    if sc is not None and 500 <= sc <= 599:
+        return True
+    if type(exc).__name__ in _TRANSIENT_NAMES:
+        return True
+    text = str(exc).upper()
+    return any(m in text for m in _TRANSIENT_MARKERS)
+
+
+def _raise_classified(exc: Exception):
+    """Translate a provider SDK exception into our fallback-control exceptions,
+    or re-raise it unchanged if it is a real (non-transient) error."""
+    if _is_quota_error(exc):
+        raise QuotaOrRateLimitError(str(exc)[:300]) from exc
+    if _is_transient_error(exc):
+        raise TransientServerError(str(exc)[:300]) from exc
+    raise exc
+
+
+# --------------------------------------------------------------------------- #
+def _strip_json_fences(text: str) -> str:
+    t = text.strip()
+    if t.startswith("```"):
+        t = re.sub(r"^```(?:json)?\s*", "", t)
+        t = re.sub(r"\s*```$", "", t)
+    return t.strip()
 
 
 def _reset_clients_for_tests() -> None:
-    _clients.clear()
+    _groq_clients.clear()
+    _gemini_clients.clear()
+    _cooldowns.clear()

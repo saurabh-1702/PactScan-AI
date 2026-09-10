@@ -222,6 +222,12 @@ class _FakeLLM:
         req_block = _section(prompt, "REQUIREMENTS:", "Classify the clause")
 
         vague_consent_clause = "appropriate consents" in clause
+        addresses_children = (
+            "not directed to children" in clause
+            or "under 18" in clause
+            or "under 18 years" in clause
+            or "parental" in clause.lower()
+        )
         liability_msa = "80,00,000" in clause
         liability_compliant = "twelve months' fees" in clause or "5,00,00,000" in clause
 
@@ -239,7 +245,16 @@ class _FakeLLM:
                 or "child" in req_text.lower()
             ) or req_id in {"dpdp_s9", "gdpr_art8", "pb_verifiable_parental_consent"}
 
-            if is_child_consent_req and vague_consent_clause:
+            if is_child_consent_req and addresses_children:
+                results.append(
+                    BatchNLIItem(
+                        requirement_id=req_id,
+                        label=NLILabel.ENTAILS,
+                        explanation="The clause expressly excludes processing children's data.",
+                        confidence=ConfidenceLevel.high,
+                    )
+                )
+            elif is_child_consent_req and vague_consent_clause:
                 results.append(
                     BatchNLIItem(
                         requirement_id=req_id,

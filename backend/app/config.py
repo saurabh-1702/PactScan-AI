@@ -31,9 +31,21 @@ class Settings(BaseSettings):
     # --- Redis ---
     redis_url: str = "redis://localhost:6379/0"
 
-    # --- LLM provider (Google Gemini, free tier, multi-account) ---
+    # --- LLM providers ---
+    # Order the fallback walks: every account+tier of the first provider, then
+    # the next. Groq's free tier is far larger than Gemini's, so it leads.
+    llm_provider_order: str = "groq,gemini"
+    llm_provider: str = "groq"  # legacy alias; provider_order is authoritative
+    llm_tier_cooldown_seconds: int = 60
+
+    # --- Groq (primary) ---
+    groq_api_keys: str = ""
+    groq_model_tiers_raw: str = (
+        "llama-3.3-70b-versatile,openai/gpt-oss-120b,openai/gpt-oss-20b,llama-3.1-8b-instant"
+    )
+
+    # --- Google Gemini (fallback, free tier, multi-account) ---
     gemini_api_keys: str = ""
-    llm_provider: str = "gemini"
 
     gemini_model_tier_1: str = "gemini-3.8-flash"
     gemini_model_tier_2: str = "gemini-3.7-flash"
@@ -49,7 +61,7 @@ class Settings(BaseSettings):
     # --- LLM response cache ---
     llm_cache_enabled: bool = True
     llm_cache_dir: str = ".llm_cache"
-    llm_prompt_version: str = "v2"  # bump on any prompt/schema change (Phase 1: batched NLI = v2)
+    llm_prompt_version: str = "v3"  # bump on any prompt/schema change (v3: conservative NLI prompt + Groq)
 
     # --- Optional secondary provider ---
     anthropic_api_key: str = ""
@@ -61,10 +73,26 @@ class Settings(BaseSettings):
     # --- App ---
     environment: str = "development"
 
+    @staticmethod
+    def _csv(value: str) -> list[str]:
+        return [v.strip() for v in value.split(",") if v.strip()]
+
+    @property
+    def provider_order(self) -> list[str]:
+        return self._csv(self.llm_provider_order) or ["groq", "gemini"]
+
+    @property
+    def groq_api_key_list(self) -> list[str]:
+        return self._csv(self.groq_api_keys)
+
+    @property
+    def groq_model_tiers(self) -> list[str]:
+        return self._csv(self.groq_model_tiers_raw)
+
     @property
     def gemini_api_key_list(self) -> list[str]:
         """Parsed, priority-ordered list of Google AI Studio API keys."""
-        return [k.strip() for k in self.gemini_api_keys.split(",") if k.strip()]
+        return self._csv(self.gemini_api_keys)
 
     @property
     def gemini_model_tiers(self) -> list[str]:
