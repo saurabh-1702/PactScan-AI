@@ -167,5 +167,13 @@ This was a deliberate final decision made to fit a tight build timeline while st
 **The bug:** `pytest-asyncio==0.25.0` (the Phase 0/1 prompt pin) emits ~15 `asyncio.get_event_loop_policy is deprecated` warnings *per async test* on Python 3.14 — ~88 warnings for a small suite.
 **The fix, applied:** bumped to `pytest-asyncio==1.4.0` (which pulled `pytest==9.1.1`). Suite passes clean. `pytest.ini` sets `asyncio_mode = strict` + `asyncio_default_fixture_loop_scope = function`.
 
+### 10.6 — `llama-cloud` 2.x `parsing.parse` requires `expand`, not `output_options`
+**The bug:** `client.parsing.parse(..., output_options={"markdown": True})` → `ValueError: You should provide a non-empty sequence for the 'expand' parameter`.
+**The fix, applied:** `client.parsing.parse(tier=settings.llama_parse_tier, version="latest", upload_file=file_from_path(path), expand=["markdown"])`. Read pages from `result.markdown.pages` (`.markdown` / `.page_number` / `.header`, or `.error` on a failed page). `LLAMA_PARSE_TIER` in `.env` defaults to `fast` (cheapest, no AI — fine for the simple synthetic fixtures; bump to `cost_effective` for real multi-column/table contracts).
+
+### 10.7 — `pytest` was running live tests when keys were present
+**The bug:** `@pytest.mark.live` does not deselect by default — a plain `pytest` (no `-m`) runs everything, so once `GEMINI_API_KEYS` / `LLAMA_CLOUD_API_KEY` were in `.env`, `pytest` burned real quota on the live tests.
+**The fix, applied:** `pytest.ini` now has `addopts = -m "not live"`. Plain `pytest` = mocked only; `pytest -m live` overrides and runs only the live tests. **Every later phase's live tests must also carry `@pytest.mark.live`.**
+
 ### 10.5 — Mocked tests must not require Docker/Neo4j
 **Pattern established:** the Detect agent's graph access goes through a `GraphStore` interface (`app/agents/detect/graph_store.py`) with `Neo4jGraphStore` and `InMemoryGraphStore`. All mocked tests use the in-memory store; only `-m live` tests and the running API touch Neo4j. Keep this split for every later phase's agent — a mocked `pytest -v` run must never need a container up.

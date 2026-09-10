@@ -86,3 +86,20 @@ then reads `interaction.output_text`. If live testing shows the call shape is of
 
 `get_overriders()` first used `length(rels)` on a `-[rels:OVERRIDES*1..3]->` list —
 Neo4j 5 rejects this (`length()` wants a Path). Fixed to `size(rels)`.
+
+### LlamaParse `client.parsing.parse` call shape (fixed after first live run)
+
+First attempt passed `output_options={"markdown": True, "include_page_breaks": True}`
+and no `expand` → `ValueError: You should provide a non-empty sequence for the
+'expand' parameter`. Correct call for `llama-cloud` 2.16:
+`client.parsing.parse(tier=<tier>, version="latest", upload_file=file_from_path(path), expand=["markdown"])`.
+Response: `result.markdown.pages` — a list of page objects with `.markdown` /
+`.page_number` / `.header` (or `.error` on a failed page); fallbacks to
+`result.text.pages` then `result.markdown_full` / `result.text_full`.
+Parsing tier is `LLAMA_PARSE_TIER` in `.env` (default `fast` — cheapest, no AI).
+
+### `pytest.ini`: `addopts = -m "not live"`
+
+Plain `pytest` runs the mocked suite only; `pytest -m live` overrides addopts and
+runs only the live tests. Without this, a plain `pytest` with keys present in
+`.env` also ran the live tests and burned quota.

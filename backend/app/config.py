@@ -56,6 +56,7 @@ class Settings(BaseSettings):
 
     # --- LlamaParse (Phase 1+) ---
     llama_cloud_api_key: str = ""
+    llama_parse_tier: str = "fast"  # fast | cost_effective | agentic | agentic_plus
 
     # --- App ---
     environment: str = "development"

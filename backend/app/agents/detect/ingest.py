@@ -57,54 +57,68 @@ def parse_document(file_path: str | Path) -> ParsedDocument:
 
     client = LlamaCloud(api_key=settings.llama_cloud_api_key)
     result = client.parsing.parse(
-        tier="cost_effective",
+        tier=settings.llama_parse_tier,
         version="latest",
         upload_file=file_from_path(str(path)),
-        output_options={"markdown": True, "include_page_breaks": True},
+        expand=["markdown"],
     )
     return _parsed_document_from_llama_result(path.name, result)
 
 
 def _parsed_document_from_llama_result(filename: str, result: object) -> ParsedDocument:
-    """Best-effort extraction of per-page markdown from a ParsingGetResponse.
+    """Extract per-page markdown from a llama-cloud ParsingGetResponse.
 
-    The llama-cloud response shape has changed across versions; try the known
-    locations in order and fail loudly if none match (so a real break surfaces
-    during live testing rather than silently producing an empty document).
+    Shape (llama-cloud >= 2.x): result.markdown.pages -> list of page objects,
+    each with .markdown / .page_number (successful) or .error (failed).
+    Falls back to result.text.pages, then markdown_full / text_full.
     """
-    candidates = []
-    for attr_chain in (("result", "pages"), ("pages",), ("data", "pages")):
-        obj = result
-        for attr in attr_chain:
-            obj = getattr(obj, attr, None) if not isinstance(obj, dict) else obj.get(attr)
-            if obj is None:
-                break
-        if obj:
-            candidates = obj
-            break
+    job_status = _get(_get(result, "job"), "status")
 
-    if not candidates:
-        raise RuntimeError(
-            f"Could not locate per-page content in LlamaParse response of type {type(result)!r}. "
-            "The llama-cloud API shape may have changed — inspect the response and update "
-            "_parsed_document_from_llama_result()."
+    md = _get(result, "markdown")
+    md_pages = _get(md, "pages") if md is not None else None
+    if md_pages:
+        pages = []
+        for i, page in enumerate(md_pages, start=1):
+            content = _get(page, "markdown") or _get(page, "error") or ""
+            page_no = _get(page, "page_number") or i
+            header = _get(page, "header")
+            pages.append(
+                ParsedPage(
+                    page_number=int(page_no),
+                    text=str(content),
+                    section_headers=[header] if header else [],
+                )
+            )
+        return ParsedDocument(filename=filename, pages=pages)
+
+    txt = _get(result, "text")
+    txt_pages = _get(txt, "pages") if txt is not None else None
+    if txt_pages:
+        pages = [
+            ParsedPage(
+                page_number=int(_get(p, "page_number") or i),
+                text=str(_get(p, "text") or ""),
+            )
+            for i, p in enumerate(txt_pages, start=1)
+        ]
+        return ParsedDocument(filename=filename, pages=pages)
+
+    whole = _get(result, "markdown_full") or _get(result, "text_full")
+    if whole:
+        return ParsedDocument(
+            filename=filename, pages=[ParsedPage(page_number=1, text=str(whole))]
         )
 
-    pages: list[ParsedPage] = []
-    for i, page in enumerate(candidates, start=1):
-        text = (
-            _get(page, "md")
-            or _get(page, "markdown")
-            or _get(page, "text")
-            or _get(page, "content")
-            or ""
-        )
-        page_no = _get(page, "page") or _get(page, "page_number") or i
-        pages.append(ParsedPage(page_number=int(page_no), text=str(text)))
-    return ParsedDocument(filename=filename, pages=pages)
+    raise RuntimeError(
+        f"LlamaParse returned no usable content (job status={job_status!r}, "
+        f"response type={type(result)!r}). Inspect the response and update "
+        "_parsed_document_from_llama_result()."
+    )
 
 
 def _get(obj: object, key: str):
+    if obj is None:
+        return None
     if isinstance(obj, dict):
         return obj.get(key)
     return getattr(obj, key, None)
