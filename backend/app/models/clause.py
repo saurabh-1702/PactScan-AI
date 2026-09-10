@@ -112,3 +112,18 @@ class NLIResult(BaseModel):
     label: NLILabel
     explanation: str
     confidence: ConfidenceLevel
+
+
+class BatchNLIItem(BaseModel):
+    """One requirement's classification within a batched NLI call."""
+
+    requirement_id: str
+    label: NLILabel
+    explanation: str
+    confidence: ConfidenceLevel
+
+
+class BatchNLIResult(BaseModel):
+    """Classification of one clause against several requirements in a single call."""
+
+    results: list[BatchNLIItem] = Field(default_factory=list)

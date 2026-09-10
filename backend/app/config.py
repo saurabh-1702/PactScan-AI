@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     # --- LLM response cache ---
     llm_cache_enabled: bool = True
     llm_cache_dir: str = ".llm_cache"
-    llm_prompt_version: str = "v1"
+    llm_prompt_version: str = "v2"  # bump on any prompt/schema change (Phase 1: batched NLI = v2)
 
     # --- Optional secondary provider ---
     anthropic_api_key: str = ""

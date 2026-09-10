@@ -16,11 +16,12 @@ from app.agents.detect.graph_store import InMemoryGraphStore
 from app.agents.detect.ingest import ParsedDocument, ParsedPage
 from app.agents.detect.seed_data import seed
 from app.models.clause import (
+    BatchNLIItem,
+    BatchNLIResult,
     ClauseExtractionResult,
     ClauseType,
     ConfidenceLevel,
     NLILabel,
-    NLIResult,
     OverrideCheckResult,
     _LLMClause,
 )
@@ -80,8 +81,8 @@ class _FakeLLM:
             return self._extract(prompt)
         if name == "OverrideCheckResult":
             return self._override(prompt)
-        if name == "NLIResult":
-            return self._nli(prompt)
+        if name == "BatchNLIResult":
+            return self._batch_nli(prompt)
         raise AssertionError(f"_FakeLLM has no route for schema {name}")
 
     async def generate_text(self, prompt, system_prompt=None):
@@ -215,49 +216,82 @@ class _FakeLLM:
             )
         return OverrideCheckResult(overrides=False, scope="", reasoning="No change of legal effect.")
 
-    # -- NLI classification -----------------------------------------
-    def _nli(self, prompt: str) -> NLIResult:
-        clause = _section(prompt, "CLAUSE (effective text):", "REQUIREMENT:")
-        requirement = _section(prompt, "REQUIREMENT:", "Classify the clause")
+    # -- batched NLI classification --------------------------------
+    def _batch_nli(self, prompt: str) -> BatchNLIResult:
+        clause = _section(prompt, "CLAUSE (effective text):", "REQUIREMENTS:")
+        req_block = _section(prompt, "REQUIREMENTS:", "Classify the clause")
 
-        is_child_consent_req = (
-            "verifiable consent of a parent" in requirement
-            or "child's personal data" in requirement
-            or "parental responsibility" in requirement
-            or "child's consent" in requirement.lower()
-        )
         vague_consent_clause = "appropriate consents" in clause
+        liability_msa = "80,00,000" in clause
+        liability_compliant = "twelve months' fees" in clause or "5,00,00,000" in clause
 
-        if is_child_consent_req and vague_consent_clause:
-            return NLIResult(
-                label=NLILabel.CONTRADICTS,
-                explanation=(
-                    "The clause only requires 'appropriate consents' generally and is silent on "
-                    "children's data and verifiable parental consent, so the agreement would "
-                    "permit non-compliant processing of a child's personal data."
-                ),
-                confidence=ConfidenceLevel.high,
-            )
-        if is_child_consent_req:
-            # other clauses don't address children — genuine but low-signal gap
-            return NLIResult(
-                label=NLILabel.NEUTRAL,
-                explanation="Clause does not address children's data.",
-                confidence=ConfidenceLevel.low,
-            )
-        # liability override case: leave NLI neutral, the override finding covers it
-        if "80,00,000" in clause or "twelve months' fees" in clause or "5,00,00,000" in clause:
-            return NLIResult(
-                label=NLILabel.NEUTRAL if "80,00,000" in clause else NLILabel.ENTAILS,
-                explanation="Liability cap handled by dedicated override check / compliant amendment control.",
-                confidence=ConfidenceLevel.low,
-            )
-        # everything else in the clean / compliant contracts satisfies its rule
-        return NLIResult(
-            label=NLILabel.ENTAILS,
-            explanation="The clause satisfies the requirement.",
-            confidence=ConfidenceLevel.high,
-        )
+        results: list[BatchNLIItem] = []
+        for line in req_block.splitlines():
+            line = line.strip()
+            m = re.search(r"requirement_id=['\"]?([\w.]+)['\"]?\s*:\s*(.*)", line)
+            if not m:
+                continue
+            req_id, req_text = m.group(1), m.group(2)
+            is_child_consent_req = (
+                "verifiable consent of a parent" in req_text
+                or "child's personal data" in req_text
+                or "parental responsibility" in req_text
+                or "child" in req_text.lower()
+            ) or req_id in {"dpdp_s9", "gdpr_art8", "pb_verifiable_parental_consent"}
+
+            if is_child_consent_req and vague_consent_clause:
+                results.append(
+                    BatchNLIItem(
+                        requirement_id=req_id,
+                        label=NLILabel.CONTRADICTS
+                        if req_id in {"dpdp_s9", "gdpr_art8"}
+                        else NLILabel.NEUTRAL,
+                        explanation=(
+                            "The clause only requires 'appropriate consents' generally and is "
+                            "silent on children's data and verifiable parental consent."
+                        ),
+                        confidence=ConfidenceLevel.high
+                        if req_id in {"dpdp_s9", "gdpr_art8"}
+                        else ConfidenceLevel.low,
+                    )
+                )
+            elif is_child_consent_req:
+                results.append(
+                    BatchNLIItem(
+                        requirement_id=req_id,
+                        label=NLILabel.NEUTRAL,
+                        explanation="Clause does not address children's data.",
+                        confidence=ConfidenceLevel.low,
+                    )
+                )
+            elif liability_msa:
+                results.append(
+                    BatchNLIItem(
+                        requirement_id=req_id,
+                        label=NLILabel.NEUTRAL,
+                        explanation="Liability cap covered by the dedicated override check.",
+                        confidence=ConfidenceLevel.low,
+                    )
+                )
+            elif liability_compliant:
+                results.append(
+                    BatchNLIItem(
+                        requirement_id=req_id,
+                        label=NLILabel.ENTAILS,
+                        explanation="Amendment control makes any cap change explicit.",
+                        confidence=ConfidenceLevel.high,
+                    )
+                )
+            else:
+                results.append(
+                    BatchNLIItem(
+                        requirement_id=req_id,
+                        label=NLILabel.ENTAILS,
+                        explanation="The clause satisfies the requirement.",
+                        confidence=ConfidenceLevel.high,
+                    )
+                )
+        return BatchNLIResult(results=results)
 
 
 def _section(text: str, start: str, end: str) -> str:

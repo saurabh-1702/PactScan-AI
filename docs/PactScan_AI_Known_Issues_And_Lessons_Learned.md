@@ -175,5 +175,14 @@ This was a deliberate final decision made to fit a tight build timeline while st
 **The bug:** `@pytest.mark.live` does not deselect by default — a plain `pytest` (no `-m`) runs everything, so once `GEMINI_API_KEYS` / `LLAMA_CLOUD_API_KEY` were in `.env`, `pytest` burned real quota on the live tests.
 **The fix, applied:** `pytest.ini` now has `addopts = -m "not live"`. Plain `pytest` = mocked only; `pytest -m live` overrides and runs only the live tests. **Every later phase's live tests must also carry `@pytest.mark.live`.**
 
+### 10.8 — The fallback chain was NOT catching Gemini's 429 (first live run)
+**The bug:** `google-genai` 2.22 raises `google.genai._gaos.lib.compat_errors.RateLimitError` for a quota 429 — a **separate class hierarchy** from `google.genai.errors.APIError`, which is what `_call_gemini` was catching. So the first 429 propagated and killed the whole run instead of advancing to Tier 2 / the next account. (Free-tier limits are tiny — `gemini-3.8-flash` showed `limit: 5` then `limit: 20` requests, and a single contract makes ~10-15 LLM calls.)
+**The fix, applied:** `_call_gemini` now catches `Exception` and defers to `_is_quota_error()`, which returns True on any of: `type(exc).__name__` in {RateLimitError, ResourceExhausted...}, a `status_code`/`code`/`status` of 429 / `RESOURCE_EXHAUSTED` / `too_many_requests`, or the message containing RESOURCE_EXHAUSTED / QUOTA / RATE LIMIT / TOO MANY REQUESTS. Non-quota errors (BadRequest, invalid schema, ValueError) still re-raise immediately. Regression tests: `test_is_quota_error_recognises_sdk_ratelimit_shapes`, `test_sdk_ratelimit_error_advances_fallback`.
+
+### 10.9 — Batch the NLI compliance calls (call-volume reduction)
+**Context:** the known-issues §3 optimisation ("check a clause against all relevant rules/regs in one structured call") was needed after the first live run — per-clause-per-rule NLI made ~15 calls/contract and blew the free-tier per-minute limits instantly.
+**Applied:** `detect_agent` now does ONE `generate_structured(BatchNLIResult)` call per clause covering every relevant playbook rule + regulation together (~7 calls/contract). Any future agent doing many small LLM classifications should batch the same way.
+**Reminder:** bumping the batched schema/prompt means `LLM_PROMPT_VERSION` must move (`v1` → `v2`). Set it in `backend\.env`.
+
 ### 10.5 — Mocked tests must not require Docker/Neo4j
 **Pattern established:** the Detect agent's graph access goes through a `GraphStore` interface (`app/agents/detect/graph_store.py`) with `Neo4jGraphStore` and `InMemoryGraphStore`. All mocked tests use the in-memory store; only `-m live` tests and the running API touch Neo4j. Keep this split for every later phase's agent — a mocked `pytest -v` run must never need a container up.

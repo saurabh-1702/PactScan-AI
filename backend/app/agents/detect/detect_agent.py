@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 from app.agents.detect.graph_store import DEMO_TENANT, GraphStore
 from app.llm import client as llm
 from app.models.clause import (
+    BatchNLIItem,
+    BatchNLIResult,
     ClauseType,
     ConfidenceLevel,
     ExtractedClause,
@@ -60,13 +62,16 @@ RELEVANT_REGULATION: dict[ClauseType, list[str]] = {
 _NLI_SYSTEM_PROMPT = (
     "You perform natural-language inference for contract compliance. Given a contract "
     "clause (its effective text, which may already incorporate later overriding "
-    "provisions) and a single rule or regulatory requirement, decide whether the clause "
-    "ENTAILS the requirement (clearly satisfies it), CONTRADICTS it (violates or is "
-    "incompatible with it), or is NEUTRAL (does not address it). A clause that is vague or "
-    "silent on a specific mandatory protection (for example children's data / verifiable "
-    "parental consent) where that protection is clearly required CONTRADICTS the "
-    "requirement rather than being NEUTRAL, because the agreement would permit "
-    "non-compliant processing."
+    "provisions) and a numbered list of rules / regulatory requirements, classify the "
+    "clause against EACH requirement independently as:\n"
+    "  ENTAILS    - the clause clearly satisfies the requirement\n"
+    "  CONTRADICTS - the clause violates or is incompatible with the requirement\n"
+    "  NEUTRAL    - the clause does not address the requirement at all\n"
+    "A clause that is vague or silent on a specific mandatory protection (for example "
+    "children's data / verifiable parental consent) where that protection is clearly "
+    "required CONTRADICTS the requirement rather than being NEUTRAL, because the "
+    "agreement would permit non-compliant processing. Return exactly one result per "
+    "requirement, echoing back its requirement_id."
 )
 
 
@@ -75,14 +80,21 @@ def _finding_id(contract_id: str, clause_id: str, rule_id: str) -> str:
     return f"fnd_{h[:12]}"
 
 
-async def _classify(effective_text: str, requirement_text: str) -> NLIResult:
+async def _classify_batch(
+    effective_text: str, requirements: list[tuple[str, str, str, str]]
+) -> BatchNLIResult:
+    """One structured call classifying the clause against every relevant
+    requirement (id, kind, label, text)."""
+    lines = "\n".join(
+        f"- requirement_id={req_id!r}: {text}" for req_id, _kind, _label, text in requirements
+    )
     prompt = (
         f"CLAUSE (effective text):\n{effective_text}\n\n"
-        f"REQUIREMENT:\n{requirement_text}\n\n"
-        "Classify the clause against the requirement."
+        f"REQUIREMENTS:\n{lines}\n\n"
+        "Classify the clause against each requirement."
     )
     return await llm.generate_structured(
-        prompt=prompt, schema=NLIResult, system_prompt=_NLI_SYSTEM_PROMPT
+        prompt=prompt, schema=BatchNLIResult, system_prompt=_NLI_SYSTEM_PROMPT
     )
 
 
@@ -145,33 +157,42 @@ async def run_detect(
                 )
             )
 
-        # (2)(3) NLI against relevant playbook rules
+        # (2)(3) NLI against every relevant playbook rule + regulation, in ONE call
+        requirements: list[tuple[str, str, str, str]] = []
         for rule_id in RELEVANT_PLAYBOOK.get(clause.clause_type, []):
             rule = playbook.get(rule_id)
-            if not rule:
-                continue
-            nli = await _classify(effective_text, rule["rule_text"])
-            f = _maybe_finding(
-                contract_id, clause, override_chain, nli, rule_id,
-                f"Playbook: {rule_id}", kind="playbook",
-            )
-            if f:
-                findings.append(f)
-                edges.append((clause.clause_id, "CONTRADICTS", rule_id))
-
-        # (2)(3) NLI against relevant regulation clauses
+            if rule:
+                requirements.append(
+                    (rule_id, "playbook", f"Playbook: {rule_id}", rule["rule_text"])
+                )
         for reg_id in RELEVANT_REGULATION.get(clause.clause_type, []):
             reg = regulations.get(reg_id)
-            if not reg:
+            if reg:
+                requirements.append(
+                    (
+                        reg_id,
+                        "regulation",
+                        f"{reg['regulation_name']} {reg['section']}",
+                        reg["text"],
+                    )
+                )
+
+        if not requirements:
+            continue
+
+        batch = await _classify_batch(effective_text, requirements)
+        by_id = {item.requirement_id: item for item in batch.results}
+        for req_id, kind, label, _text in requirements:
+            item = by_id.get(req_id)
+            if item is None:
                 continue
-            nli = await _classify(effective_text, reg["text"])
-            label = f"{reg['regulation_name']} {reg['section']}"
             f = _maybe_finding(
-                contract_id, clause, override_chain, nli, reg_id, label, kind="regulation"
+                contract_id, clause, override_chain, item, req_id, label, kind=kind
             )
             if f:
                 findings.append(f)
-                edges.append((clause.clause_id, "VIOLATES", reg_id))
+                rel = "VIOLATES" if kind == "regulation" else "CONTRADICTS"
+                edges.append((clause.clause_id, rel, req_id))
 
     # de-dup by finding_id (a clause could hit the same rule twice via aliasing)
     unique: dict[str, Finding] = {}
@@ -192,7 +213,7 @@ def _maybe_finding(
     contract_id: str,
     clause: ExtractedClause,
     override_chain: list[str],
-    nli: NLIResult,
+    nli: NLIResult | BatchNLIItem,
     rule_id: str,
     rule_label: str,
     kind: str,

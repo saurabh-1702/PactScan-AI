@@ -103,3 +103,17 @@ Parsing tier is `LLAMA_PARSE_TIER` in `.env` (default `fast` — cheapest, no AI
 Plain `pytest` runs the mocked suite only; `pytest -m live` overrides addopts and
 runs only the live tests. Without this, a plain `pytest` with keys present in
 `.env` also ran the live tests and burned quota.
+
+### First live run (2026-09-11): 2 real bugs surfaced, both fixed
+
+1. **429 not caught** — `google-genai` raises `compat_errors.RateLimitError` (not
+   `errors.APIError`), so the fallback chain died on the first quota error instead
+   of advancing. `_call_gemini` now catches broadly and `_is_quota_error()` checks
+   class name / status code / message markers. (known-issues §10.8)
+2. **Call volume** — per-clause-per-rule NLI (~15 calls/contract) exhausted the
+   free-tier per-minute limits. NLI is now **batched**: one `BatchNLIResult` call
+   per clause covering all relevant rules + regs (~7 calls/contract).
+   `LLM_PROMPT_VERSION` bumped `v1` → `v2` (schema/prompt changed).
+
+`test_live_contract_a_conflict` PASSED on that first run — the pipeline
+(LlamaParse → Gemini interactions API → graph → findings) is sound end to end.

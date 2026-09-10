@@ -163,7 +163,6 @@ def _call_gemini(
     Translates quota / rate-limit failures into ``QuotaOrRateLimitError`` so the
     fallback loop can advance; every other failure propagates unchanged.
     """
-    from google.genai import errors as genai_errors
     from google.genai import interactions as genai_interactions
 
     client = _get_client(api_key)
@@ -180,9 +179,9 @@ def _call_gemini(
 
     try:
         interaction = client.interactions.create(**kwargs)
-    except genai_errors.APIError as exc:
+    except Exception as exc:  # noqa: BLE001 - re-raised below unless it's a quota error
         if _is_quota_error(exc):
-            raise QuotaOrRateLimitError(str(exc)) from exc
+            raise QuotaOrRateLimitError(str(exc)[:300]) from exc
         raise
 
     output = getattr(interaction, "output_text", None)
@@ -195,12 +194,26 @@ def _call_gemini(
     return output
 
 
+_QUOTA_ERROR_NAMES = {"RateLimitError", "ResourceExhausted", "ResourceExhaustedError"}
+_QUOTA_TEXT_MARKERS = (
+    "RESOURCE_EXHAUSTED",
+    "RATE LIMIT",
+    "QUOTA",
+    "TOO MANY REQUESTS",
+    "TOO_MANY_REQUESTS",
+)
+
+
 def _is_quota_error(exc: Exception) -> bool:
-    code = getattr(exc, "code", None) or getattr(exc, "status", None)
-    if code == 429 or code == "RESOURCE_EXHAUSTED":
+    """True only for quota / rate-limit (HTTP 429). Everything else must raise."""
+    if type(exc).__name__ in _QUOTA_ERROR_NAMES:
         return True
+    for attr in ("status_code", "code", "status"):
+        val = getattr(exc, attr, None)
+        if val == 429 or val == "429" or val == "RESOURCE_EXHAUSTED" or val == "too_many_requests":
+            return True
     text = str(exc).upper()
-    return "RESOURCE_EXHAUSTED" in text or "RATE LIMIT" in text or "QUOTA" in text
+    return any(marker in text for marker in _QUOTA_TEXT_MARKERS)
 
 
 def _reset_clients_for_tests() -> None:

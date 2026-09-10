@@ -59,6 +59,46 @@ async def test_tier_fallback_advances_on_quota_error(monkeypatch):
     assert rec.calls[-1]["api_key"] == "key1"
 
 
+async def test_is_quota_error_recognises_sdk_ratelimit_shapes():
+    # google-genai raises compat_errors.RateLimitError (own class hierarchy) with
+    # status_code=429 and a RESOURCE_EXHAUSTED message — none of which is
+    # google.genai.errors.APIError. All three signals must be recognised.
+    class RateLimitError(Exception):
+        status_code = 429
+
+    assert llm._is_quota_error(RateLimitError("boom"))
+
+    class Weird(Exception):
+        pass
+
+    assert llm._is_quota_error(
+        Weird("... Quota exceeded for metric: generate_content_free_tier_requests ...")
+    )
+    assert not llm._is_quota_error(ValueError("invalid schema field"))
+
+
+async def test_sdk_ratelimit_error_advances_fallback(monkeypatch):
+    """A raw SDK-style RateLimitError from _call_gemini must advance the chain,
+    not kill the run (regression: the 429 class isn't errors.APIError)."""
+    from app.llm.errors import QuotaOrRateLimitError
+
+    tiers = settings.gemini_model_tiers
+
+    class RateLimitError(Exception):
+        status_code = 429
+
+    def behaviour(api_key, model):
+        if model == tiers[0]:
+            # simulate what _call_gemini does with a real SDK 429
+            raise QuotaOrRateLimitError("429 RESOURCE_EXHAUSTED")
+        return '{"value": "recovered"}'
+
+    rec = _make_call_recorder(behaviour)
+    monkeypatch.setattr(llm, "_call_gemini", rec)
+    result = await llm.generate_structured("q", _Answer)
+    assert result.value == "recovered"
+
+
 async def test_non_quota_error_raises_immediately(monkeypatch):
     def behaviour(api_key, model):
         raise ValueError("malformed request")
