@@ -1,0 +1,71 @@
+name: pactscan-dev
+
+services:
+  neo4j:
+    image: neo4j:5-community
+    container_name: pactscan-neo4j
+    ports:
+      - "7474:7474"   # HTTP browser UI
+      - "7687:7687"   # Bolt protocol
+    environment:
+      NEO4J_AUTH: neo4j/testpassword123
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7474 >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - pactscan
+
+  postgres:
+    image: postgres:16
+    container_name: pactscan-postgres
+    # Host port 5433 (NOT 5432): a pre-existing native PostgreSQL Windows Service
+    # on this machine already listens on 5432. Mapping to 5433 avoids the collision
+    # without touching the native service.
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: pactscan
+      POSTGRES_PASSWORD: testpassword123
+      POSTGRES_DB: pactscan_dev
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pactscan -d pactscan_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - pactscan
+
+  redis:
+    image: redis:7-alpine
+    container_name: pactscan-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    networks:
+      - pactscan
+
+networks:
+  pactscan:
+    driver: bridge
+
+volumes:
+  neo4j_data:
+  neo4j_logs:
+  postgres_data:
+  redis_data:
