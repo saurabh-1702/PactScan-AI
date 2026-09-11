@@ -210,5 +210,13 @@ This was a deliberate final decision made to fit a tight build timeline while st
 - Cross-clause suppression: a NEUTRAL on `dpdp_s9`/`gdpr_art8` becomes a finding only if **no** clause in the whole contract ENTAILS it.
 - `LLM_PROMPT_VERSION` → `v3`. Live `contract_c` test relaxed to `<= 3` (mocked stays exact-zero).
 
+### 10.14 — Groq's default model list 404'd (models get retired/renamed)
+**The bug:** the default `GROQ_MODEL_TIERS_RAW` (`llama-3.3-70b-versatile,...`) 404'd with `model_not_found` on the developer's account — Groq had retired the Llama chat models by the time of this build. This is exactly the "config bug, not quota" case the fallback is designed NOT to mask — it raised immediately instead of silently skipping to Gemini.
+**The fix:** list the account's actually-available models and update `GROQ_MODEL_TIERS_RAW`:
+```
+curl.exe https://api.groq.com/openai/v1/models -H "Authorization: Bearer $GROQ_API_KEY"
+```
+Current verified working tier list (2026-09): `openai/gpt-oss-120b,openai/gpt-oss-20b,qwen/qwen3.8-27b,qwen/qwen3.6-27b,openai/gpt-oss-safeguard-20b`. **If a live run ever 404s on a Groq model again, re-run that curl and update the list** — this is expected to happen periodically as Groq rotates its hosted models, it is not a code bug to chase.
+
 ### 10.5 — Mocked tests must not require Docker/Neo4j
 **Pattern established:** the Detect agent's graph access goes through a `GraphStore` interface (`app/agents/detect/graph_store.py`) with `Neo4jGraphStore` and `InMemoryGraphStore`. All mocked tests use the in-memory store; only `-m live` tests and the running API touch Neo4j. Keep this split for every later phase's agent — a mocked `pytest -v` run must never need a container up.

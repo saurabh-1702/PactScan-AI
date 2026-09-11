@@ -40,8 +40,13 @@ class Settings(BaseSettings):
 
     # --- Groq (primary) ---
     groq_api_keys: str = ""
+    # Verified against GET /openai/v1/models for the project's Groq account
+    # (2026-09) — llama-3.3-70b-versatile / llama-3.1-8b-instant have been
+    # retired from Groq. Re-check with `curl.exe https://api.groq.com/openai/v1/models
+    # -H "Authorization: Bearer $GROQ_API_KEY"` if a tier ever 404s again.
     groq_model_tiers_raw: str = (
-        "llama-3.3-70b-versatile,openai/gpt-oss-120b,openai/gpt-oss-20b,llama-3.1-8b-instant"
+        "openai/gpt-oss-120b,openai/gpt-oss-20b,qwen/qwen3.8-27b,"
+        "qwen/qwen3.6-27b,openai/gpt-oss-safeguard-20b"
     )
 
     # --- Google Gemini (fallback, free tier, multi-account) ---
