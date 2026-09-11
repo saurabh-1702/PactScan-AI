@@ -13,7 +13,7 @@ This folder holds the project specification and the phase-by-phase build plan.
 
 ## Current status
 
-**Phase 2 complete — Suggest agent.** Retriever (vector search + OVERRIDES
+**Phase 2 complete and merged to `develop` — Suggest agent.** Retriever (vector search + OVERRIDES
 context + violated-rule text) → drafting → Contrarian → Judge → Negotiation
 Twin (all three stretch goals built, not skipped) → persisted to
 `redline_suggestions`. Never writes to a file — that's Phase 3.
