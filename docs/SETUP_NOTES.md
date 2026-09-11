@@ -157,3 +157,53 @@ A wrong model id in `GROQ_MODEL_TIERS_RAW` raises a `NotFoundError` immediately
   clause suppresses the gap finding.
 - `LLM_PROMPT_VERSION` → `v3`. Live `contract_c` test relaxed to `<= 3`
   findings (mocked test still asserts exactly 0).
+
+---
+
+## Phase 2
+
+### Stretch goals — all three built, not skipped
+
+The Phase 2 prompt names Contrarian + Judge + Negotiation Twin as stretch goals,
+build-only-if-time-allows. All three were built as part of the core delivery:
+Groq's larger free-tier headroom (established in Phase 1) removed the quota risk
+that made them a stretch goal in the original design. A "dismissed" Judge verdict
+is still persisted (never silently dropped) — see `redline_suggestions.judge_json`.
+
+### Embeddings: lazy, not a one-time backfill script only
+
+The prompt describes embeddings as a one-time backfill. Implemented instead as
+**lazy backfill**: `retriever.retrieve_context` calls
+`embed_clauses.ensure_embeddings_for_contract` before every vector search, so
+embeddings never go stale as new contracts are ingested after this phase. A
+standalone `embed_clauses.py` (`python -m app.agents.suggest.embed_clauses`)
+still exists for a manual tenant-wide sweep, satisfying the "backfill the
+existing sample contracts" instruction for whatever was already in Neo4j.
+
+### Embedding dimension forced to 768
+
+`gemini-embedding-001`'s default output dimension wasn't confirmed against a
+live key at build time. Rather than guess and risk an index/query mismatch,
+`EmbedContentConfig(output_dimensionality=768)` **forces** every embedding to
+768 dimensions regardless of the model's default, and `EMBEDDING_DIMENSIONS=768`
+in `.env` matches that when creating the Neo4j vector index. Verified working
+end-to-end against real Neo4j (`CREATE VECTOR INDEX` + `db.index.vector.queryNodes`)
+with a 768-dim probe vector before this phase was called done — see the
+`Confirmed against real Neo4j` note below. If a live embedding call ever returns
+a different length, that's a one-line `EMBEDDING_DIMENSIONS` fix (and the index
+must be dropped/recreated to match), not a logic bug.
+
+### No Alembic — `Base.metadata.create_all()` for the one new table
+
+`redline_suggestions` (PostgreSQL) is created via `Base.metadata.create_all()`
+at FastAPI startup (idempotent, non-fatal like the Neo4j seeding). No migration
+framework introduced for a single table. Worth adding Alembic once schema
+changes get frequent (a good candidate: Phase 5's tenants/users/roles).
+
+### Confirmed against real Neo4j (not just mocked)
+
+Every new Cypher path — `CREATE VECTOR INDEX`, `db.index.vector.queryNodes`,
+`get_override_relationships`, `get_compliance_targets`, `find_finding_by_id`,
+`get_clause_by_id` — was exercised end-to-end against the running Neo4j
+container with a fake (deterministic, 768-dim) embedding function before this
+phase was called done, in addition to the mocked `InMemoryGraphStore` suite.

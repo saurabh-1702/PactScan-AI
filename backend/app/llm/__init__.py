@@ -5,12 +5,13 @@ Every agent call goes through ``generate_structured`` / ``generate_text`` in
 the provider, model chain, or account count is a one-file change.
 """
 
-from app.llm.client import generate_structured, generate_text
+from app.llm.client import generate_embedding, generate_structured, generate_text
 from app.llm.errors import AllLLMTiersExhaustedError, QuotaOrRateLimitError
 
 __all__ = [
     "generate_structured",
     "generate_text",
+    "generate_embedding",
     "AllLLMTiersExhaustedError",
     "QuotaOrRateLimitError",
 ]

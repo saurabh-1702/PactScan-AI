@@ -41,6 +41,7 @@ logger = logging.getLogger("pactscan.llm")
 
 TModel = TypeVar("TModel", bound=BaseModel)
 _TEXT_SCHEMA_NAME = "__text__"
+_EMBEDDING_SCHEMA_NAME = "__embedding__"
 
 _groq_clients: dict[str, Any] = {}
 _gemini_clients: dict[str, Any] = {}
@@ -81,6 +82,23 @@ async def generate_text(prompt: str, system_prompt: str | None = None) -> str:
     raw = await _resolve(prompt, system_prompt, None, _TEXT_SCHEMA_NAME)
     set_cached_response(cache_key, raw)
     return raw
+
+
+async def generate_embedding(text: str) -> list[float]:
+    """Text embedding via Gemini's dedicated embedding pool (gemini-embedding-001
+    by default). Deliberately separate from the Groq/Gemini text-generation
+    fallback chain above — low volume, first Gemini account key only, no
+    multi-account fallback (see PROJECT_CONTEXT / config.gemini_embedding_model).
+    """
+    cache_key = compute_cache_key(text, _EMBEDDING_SCHEMA_NAME, settings.llm_prompt_version)
+    cached = get_cached_response(cache_key)
+    if cached is not None:
+        logger.info("Cache hit (embedding)")
+        return json.loads(cached)
+
+    vector = await asyncio.to_thread(_embed_gemini, text)
+    set_cached_response(cache_key, json.dumps(vector))
+    return vector
 
 
 # --------------------------------------------------------------------------- #
@@ -267,6 +285,43 @@ def _call_gemini(
             f"errors={getattr(interaction, 'errors', None)})"
         )
     return output
+
+
+def _embed_gemini(text: str) -> list[float]:
+    keys = settings.gemini_api_key_list
+    if not keys:
+        raise RuntimeError(
+            "GEMINI_API_KEYS is empty in backend\\.env — required for embeddings "
+            "(Suggest's vector retrieval), even when GROQ leads the text-generation chain."
+        )
+    api_key = keys[0]
+    client = _gemini_clients.get(api_key)
+    if client is None:
+        from google import genai
+        from google.genai import types as genai_types
+
+        client = _gemini_clients[api_key] = genai.Client(
+            api_key=api_key,
+            http_options=genai_types.HttpOptions(
+                retry_options=genai_types.HttpRetryOptions(attempts=1)
+            ),
+        )
+    from google.genai import types as genai_types
+
+    try:
+        resp = client.models.embed_content(
+            model=settings.gemini_embedding_model,
+            contents=text,
+            config=genai_types.EmbedContentConfig(
+                output_dimensionality=settings.embedding_dimensions
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001 - classified below
+        _raise_classified(exc)
+
+    if not resp.embeddings:
+        raise RuntimeError("Gemini embedding call returned no embeddings")
+    return list(resp.embeddings[0].values)
 
 
 # --------------------------------------------------------------------------- #

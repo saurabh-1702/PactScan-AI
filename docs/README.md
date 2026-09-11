@@ -13,6 +13,18 @@ This folder holds the project specification and the phase-by-phase build plan.
 
 ## Current status
 
+**Phase 2 complete — Suggest agent.** Retriever (vector search + OVERRIDES
+context + violated-rule text) → drafting → Contrarian → Judge → Negotiation
+Twin (all three stretch goals built, not skipped) → persisted to
+`redline_suggestions`. Never writes to a file — that's Phase 3.
+
+- `POST /api/suggest/from-finding/{finding_id}`, `POST /api/suggest/standalone`
+- Frontend: "Suggest fix" button on `/detect`'s findings list
+- New: `backend/app/llm/client.py::generate_embedding` (Gemini, dedicated pool),
+  `backend/app/agents/suggest/`, `backend/app/db/models.py` (`RedlineSuggestion`)
+- Tests: 29 mocked pass (incl. file-immutability + dismissed-verdict-persisted);
+  `-m live` also needs `GEMINI_API_KEYS` for embeddings even with Groq leading
+
 **Phase 1 complete and merged to `develop` — Detect agent.** Ingests a vendor DPA (LlamaParse), extracts
 clauses, writes a Neo4j knowledge graph with `OVERRIDES` relationships, checks
 clauses against the playbook + DPDP (primary) / GDPR (secondary), and returns a
