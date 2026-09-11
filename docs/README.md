@@ -13,7 +13,7 @@ This folder holds the project specification and the phase-by-phase build plan.
 
 ## Current status
 
-**Phase 1 complete — Detect agent.** Ingests a vendor DPA (LlamaParse), extracts
+**Phase 1 complete and merged to `develop` — Detect agent.** Ingests a vendor DPA (LlamaParse), extracts
 clauses, writes a Neo4j knowledge graph with `OVERRIDES` relationships, checks
 clauses against the playbook + DPDP (primary) / GDPR (secondary), and returns a
 severity-scored risk report with page/section citations.
