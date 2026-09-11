@@ -24,13 +24,7 @@ export interface DetectReport {
   timestamp: string | null;
 }
 
-export async function postDetect(file: File): Promise<DetectReport> {
-  const form = new FormData();
-  form.append("file", file);
-  const res = await fetch(`${API_BASE_URL}/api/detect`, {
-    method: "POST",
-    body: form,
-  });
+async function handleJson<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let detail = `Request failed (${res.status})`;
     try {
@@ -42,4 +36,54 @@ export async function postDetect(file: File): Promise<DetectReport> {
     throw new Error(detail);
   }
   return res.json();
+}
+
+export async function postDetect(file: File): Promise<DetectReport> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${API_BASE_URL}/api/detect`, {
+    method: "POST",
+    body: form,
+  });
+  return handleJson<DetectReport>(res);
+}
+
+// --- Suggest (Phase 2) ------------------------------------------------
+
+export interface ContrarianArgument {
+  argument: string;
+  strongest_point: string;
+  confidence: number;
+}
+
+export interface JudgeVerdict {
+  verdict: "confirmed" | "downgraded" | "dismissed";
+  final_confidence: number;
+  reasoning: string;
+}
+
+export interface NegotiationFallback {
+  predicted_pushback: string;
+  fallback_clause_text: string;
+}
+
+export interface SuggestResult {
+  suggestion_id: string;
+  finding_id: string | null;
+  contract_id: string;
+  clause_id: string;
+  proposed_text: string;
+  rationale: string;
+  confidence: number;
+  contrarian: ContrarianArgument | null;
+  judge: JudgeVerdict | null;
+  negotiation: NegotiationFallback | null;
+  created_at: string;
+}
+
+export async function postSuggestFromFinding(findingId: string): Promise<SuggestResult> {
+  const res = await fetch(`${API_BASE_URL}/api/suggest/from-finding/${findingId}`, {
+    method: "POST",
+  });
+  return handleJson<SuggestResult>(res);
 }

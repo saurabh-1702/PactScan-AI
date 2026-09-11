@@ -61,6 +61,9 @@ class Settings(BaseSettings):
     gemini_model_tier_7: str = "gemma-4-31b"
 
     gemini_embedding_model: str = "gemini-embedding-001"
+    # Forced via EmbedContentConfig.output_dimensionality so the Neo4j vector index's
+    # fixed dimension never mismatches the model's own default output size.
+    embedding_dimensions: int = 768
     gemini_model_if_billing_enabled: str = "gemini-3.1-pro-preview"
 
     # --- LLM response cache ---

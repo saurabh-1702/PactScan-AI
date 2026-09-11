@@ -218,5 +218,9 @@ curl.exe https://api.groq.com/openai/v1/models -H "Authorization: Bearer $GROQ_A
 ```
 Current verified working tier list (2026-09): `openai/gpt-oss-120b,openai/gpt-oss-20b,qwen/qwen3.8-27b,qwen/qwen3.6-27b,openai/gpt-oss-safeguard-20b`. **If a live run ever 404s on a Groq model again, re-run that curl and update the list** — this is expected to happen periodically as Groq rotates its hosted models, it is not a code bug to chase.
 
+### 10.15 — In-memory SQLite + FastAPI TestClient needs StaticPool
+**The bug:** a mocked test using `create_engine("sqlite:///:memory:")` plus a FastAPI `TestClient` hit `no such table` and `SQLite objects created in a thread can only be used in that same thread` — TestClient runs the request on a different thread than the test, and each new connection to `sqlite:///:memory:` is a *separate, empty* database unless pinned to one connection.
+**The fix:** `create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)`. Standard SQLAlchemy pattern for in-memory SQLite shared across threads — use it any time a mocked test drives Postgres-backed code through `TestClient` instead of calling the function directly.
+
 ### 10.5 — Mocked tests must not require Docker/Neo4j
 **Pattern established:** the Detect agent's graph access goes through a `GraphStore` interface (`app/agents/detect/graph_store.py`) with `Neo4jGraphStore` and `InMemoryGraphStore`. All mocked tests use the in-memory store; only `-m live` tests and the running API touch Neo4j. Keep this split for every later phase's agent — a mocked `pytest -v` run must never need a container up.

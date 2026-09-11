@@ -40,6 +40,17 @@ from app.models.clause import (
 DEMO_TENANT = "demo_tenant"
 
 
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    if not a or not b or len(a) != len(b):
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b))
+    norm_a = sum(x * x for x in a) ** 0.5
+    norm_b = sum(y * y for y in b) ** 0.5
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    return dot / (norm_a * norm_b)
+
+
 class GraphStore(abc.ABC):
     # --- seeding -----------------------------------------------------------
     @abc.abstractmethod
@@ -118,6 +129,59 @@ class GraphStore(abc.ABC):
     # --- test / maintenance ---------------------------------------
     @abc.abstractmethod
     def wipe_contract(self, contract_id: str, tenant_id: str = DEMO_TENANT) -> None: ...
+
+    # --- Suggest agent support (Phase 2) --------------------------
+    @abc.abstractmethod
+    def get_clause_by_id(
+        self, clause_id: str, tenant_id: str = DEMO_TENANT
+    ) -> ExtractedClause | None: ...
+
+    @abc.abstractmethod
+    def find_finding_by_id(
+        self, finding_id: str, tenant_id: str = DEMO_TENANT
+    ) -> Finding | None:
+        """Look up a finding by id alone (no contract_id required) — the
+        POST /api/suggest/from-finding/{finding_id} endpoint only has the id."""
+
+    @abc.abstractmethod
+    def set_clause_embedding(
+        self, clause_id: str, embedding: list[float], tenant_id: str = DEMO_TENANT
+    ) -> None: ...
+
+    @abc.abstractmethod
+    def get_clauses_missing_embedding(
+        self, tenant_id: str = DEMO_TENANT, contract_id: str | None = None
+    ) -> list[ExtractedClause]: ...
+
+    @abc.abstractmethod
+    def vector_search_similar_clauses(
+        self,
+        embedding: list[float],
+        tenant_id: str = DEMO_TENANT,
+        top_k: int = 5,
+        exclude_clause_id: str | None = None,
+    ) -> list[dict]:
+        """Each dict: {clause_id, contract_id, clause_type, raw_text, similarity}."""
+
+    @abc.abstractmethod
+    def get_override_relationships(
+        self, clause_id: str, tenant_id: str = DEMO_TENANT
+    ) -> list[dict]:
+        """Direct (1-hop) OVERRIDES edges in both directions. Each dict:
+        {clause_id, raw_text, page_number, scope, direction} where direction is
+        'overrides' (this clause overrides it) or 'overridden_by'."""
+
+    @abc.abstractmethod
+    def get_compliance_targets(
+        self, clause_id: str, tenant_id: str = DEMO_TENANT
+    ) -> list[dict]:
+        """The PlaybookRule/RegulationClause node(s) this clause was flagged
+        against by Detect. Each dict: {rel_type, target_id, label, text}."""
+
+    def ensure_vector_index(self) -> None:
+        """Create the Neo4j vector index if it doesn't exist. No-op for the
+        in-memory store (brute-force cosine search needs no index)."""
+        return None
 
 
 # ======================================================================= #
@@ -224,6 +288,113 @@ class InMemoryGraphStore(GraphStore):
 
     def get_detect_run(self, contract_id, tenant_id=DEMO_TENANT):
         return self.detect_runs.get((tenant_id, contract_id))
+
+    # --- Suggest agent support (Phase 2) --------------------------
+    def get_clause_by_id(self, clause_id, tenant_id=DEMO_TENANT):
+        return self.clauses.get((tenant_id, clause_id))
+
+    def find_finding_by_id(self, finding_id, tenant_id=DEMO_TENANT):
+        for (t, _cid), findings in self.findings.items():
+            if t != tenant_id:
+                continue
+            for f in findings:
+                if f.finding_id == finding_id:
+                    return f
+        return None
+
+    def set_clause_embedding(self, clause_id, embedding, tenant_id=DEMO_TENANT):
+        clause = self.clauses.get((tenant_id, clause_id))
+        if clause is not None:
+            clause.embedding = list(embedding)
+
+    def get_clauses_missing_embedding(self, tenant_id=DEMO_TENANT, contract_id=None):
+        return [
+            c
+            for (t, _), c in self.clauses.items()
+            if t == tenant_id
+            and c.embedding is None
+            and (contract_id is None or c.contract_id == contract_id)
+        ]
+
+    def vector_search_similar_clauses(self, embedding, tenant_id=DEMO_TENANT, top_k=5, exclude_clause_id=None):
+        scored = []
+        for (t, cid), c in self.clauses.items():
+            if t != tenant_id or c.embedding is None or cid == exclude_clause_id:
+                continue
+            scored.append(
+                {
+                    "clause_id": c.clause_id,
+                    "contract_id": c.contract_id,
+                    "clause_type": c.clause_type.value,
+                    "raw_text": c.raw_text,
+                    "similarity": _cosine_similarity(embedding, c.embedding),
+                }
+            )
+        scored.sort(key=lambda d: d["similarity"], reverse=True)
+        return scored[:top_k]
+
+    def get_override_relationships(self, clause_id, tenant_id=DEMO_TENANT):
+        out: list[dict] = []
+        for e in self.overrides:
+            if e["tenant_id"] != tenant_id:
+                continue
+            if e["src"] == clause_id:
+                target = self.clauses.get((tenant_id, e["dst"]))
+                if target:
+                    out.append(
+                        {
+                            "clause_id": target.clause_id,
+                            "raw_text": target.raw_text,
+                            "page_number": target.page_number,
+                            "scope": e["scope"],
+                            "direction": "overrides",
+                        }
+                    )
+            elif e["dst"] == clause_id:
+                source = self.clauses.get((tenant_id, e["src"]))
+                if source:
+                    out.append(
+                        {
+                            "clause_id": source.clause_id,
+                            "raw_text": source.raw_text,
+                            "page_number": source.page_number,
+                            "scope": e["scope"],
+                            "direction": "overridden_by",
+                        }
+                    )
+        return out
+
+    def get_compliance_targets(self, clause_id, tenant_id=DEMO_TENANT):
+        out: list[dict] = []
+        for (t, _cid), edges in self.compliance_edges.items():
+            if t != tenant_id:
+                continue
+            for edge_clause_id, rel_type, target_id in edges:
+                if edge_clause_id != clause_id:
+                    continue
+                if rel_type == "VIOLATES":
+                    reg = self.regulations.get(target_id)
+                    if reg:
+                        out.append(
+                            {
+                                "rel_type": rel_type,
+                                "target_id": target_id,
+                                "label": f"{reg['regulation_name']} {reg['section']}",
+                                "text": reg["text"],
+                            }
+                        )
+                else:
+                    rule = self.playbook.get(target_id)
+                    if rule:
+                        out.append(
+                            {
+                                "rel_type": rel_type,
+                                "target_id": target_id,
+                                "label": f"Playbook: {target_id}",
+                                "text": rule["rule_text"],
+                            }
+                        )
+        return out
 
     def wipe_contract(self, contract_id, tenant_id=DEMO_TENANT):
         self.contracts.pop((tenant_id, contract_id), None)
@@ -508,6 +679,135 @@ class Neo4jGraphStore(GraphStore):
             contract_id=contract_id,
             tenant_id=tenant_id,
         )
+
+    # --- Suggest agent support (Phase 2) --------------------------
+    def get_clause_by_id(self, clause_id, tenant_id=DEMO_TENANT):
+        rows = self._run(
+            """
+            MATCH (cl:Clause {id: $id, tenant_id: $tenant_id})
+            RETURN cl.id AS clause_id, cl.contract_id AS contract_id,
+                   cl.clause_type AS clause_type, cl.page_number AS page_number,
+                   cl.section_header AS section_header, cl.raw_text AS raw_text,
+                   cl.confidence AS confidence, cl.embedding AS embedding
+            """,
+            id=clause_id,
+            tenant_id=tenant_id,
+        )
+        return ExtractedClause.model_validate(rows[0]) if rows else None
+
+    def find_finding_by_id(self, finding_id, tenant_id=DEMO_TENANT):
+        rows = self._run(
+            """
+            MATCH (f:Finding {id: $id, tenant_id: $tenant_id})
+            RETURN f.id AS finding_id, f.clause_id AS clause_id, f.clause_type AS clause_type,
+                   f.page_number AS page_number, f.section_header AS section_header,
+                   f.severity AS severity, f.rule_or_regulation_violated AS rule_or_regulation_violated,
+                   f.explanation AS explanation, f.confidence AS confidence,
+                   f.override_chain AS override_chain
+            """,
+            id=finding_id,
+            tenant_id=tenant_id,
+        )
+        if not rows:
+            return None
+        row = dict(rows[0])
+        row["override_chain"] = row.get("override_chain") or []
+        return Finding.model_validate(row)
+
+    def set_clause_embedding(self, clause_id, embedding, tenant_id=DEMO_TENANT):
+        self._run(
+            "MATCH (cl:Clause {id: $id, tenant_id: $tenant_id}) SET cl.embedding = $embedding",
+            id=clause_id,
+            tenant_id=tenant_id,
+            embedding=list(embedding),
+        )
+
+    def get_clauses_missing_embedding(self, tenant_id=DEMO_TENANT, contract_id=None):
+        cypher = (
+            "MATCH (cl:Clause {tenant_id: $tenant_id}) WHERE cl.embedding IS NULL "
+            + ("AND cl.contract_id = $contract_id " if contract_id else "")
+            + "RETURN cl.id AS clause_id, cl.contract_id AS contract_id, cl.clause_type AS clause_type, "
+            "cl.page_number AS page_number, cl.section_header AS section_header, "
+            "cl.raw_text AS raw_text, cl.confidence AS confidence"
+        )
+        params = {"tenant_id": tenant_id}
+        if contract_id:
+            params["contract_id"] = contract_id
+        rows = self._run(cypher, **params)
+        return [ExtractedClause.model_validate(r) for r in rows]
+
+    def ensure_vector_index(self) -> None:
+        self._run(
+            f"""
+            CREATE VECTOR INDEX clause_embeddings IF NOT EXISTS
+            FOR (cl:Clause) ON (cl.embedding)
+            OPTIONS {{ indexConfig: {{
+                `vector.dimensions`: {int(settings.embedding_dimensions)},
+                `vector.similarity_function`: 'cosine'
+            }} }}
+            """
+        )
+
+    def vector_search_similar_clauses(self, embedding, tenant_id=DEMO_TENANT, top_k=5, exclude_clause_id=None):
+        self.ensure_vector_index()
+        rows = self._run(
+            """
+            CALL db.index.vector.queryNodes('clause_embeddings', $k, $embedding)
+            YIELD node, score
+            WHERE node.tenant_id = $tenant_id AND node.id <> coalesce($exclude, '')
+            RETURN node.id AS clause_id, node.contract_id AS contract_id,
+                   node.clause_type AS clause_type, node.raw_text AS raw_text, score AS similarity
+            """,
+            k=top_k,
+            embedding=list(embedding),
+            tenant_id=tenant_id,
+            exclude=exclude_clause_id,
+        )
+        return rows
+
+    def get_override_relationships(self, clause_id, tenant_id=DEMO_TENANT):
+        rows = self._run(
+            """
+            MATCH (cl:Clause {id: $id, tenant_id: $tenant_id})
+            OPTIONAL MATCH (cl)-[ro:OVERRIDES]->(overridden:Clause)
+            OPTIONAL MATCH (overrider:Clause)-[ri:OVERRIDES]->(cl)
+            RETURN collect(DISTINCT {clause_id: overridden.id, raw_text: overridden.raw_text,
+                                      page_number: overridden.page_number, scope: ro.scope,
+                                      direction: 'overrides'}) AS forward,
+                   collect(DISTINCT {clause_id: overrider.id, raw_text: overrider.raw_text,
+                                      page_number: overrider.page_number, scope: ri.scope,
+                                      direction: 'overridden_by'}) AS backward
+            """,
+            id=clause_id,
+            tenant_id=tenant_id,
+        )
+        if not rows:
+            return []
+        forward = [r for r in rows[0]["forward"] if r.get("clause_id")]
+        backward = [r for r in rows[0]["backward"] if r.get("clause_id")]
+        return forward + backward
+
+    def get_compliance_targets(self, clause_id, tenant_id=DEMO_TENANT):
+        rows = self._run(
+            """
+            MATCH (cl:Clause {id: $id, tenant_id: $tenant_id})
+            OPTIONAL MATCH (cl)-[:VIOLATES]->(reg:RegulationClause)
+            OPTIONAL MATCH (cl)-[:CONTRADICTS]->(pb:PlaybookRule)
+            RETURN collect(DISTINCT {rel_type: 'VIOLATES', target_id: reg.id,
+                                      label: reg.regulation_name + ' ' + reg.section,
+                                      text: reg.text}) AS regs,
+                   collect(DISTINCT {rel_type: 'CONTRADICTS', target_id: pb.id,
+                                      label: 'Playbook: ' + pb.id,
+                                      text: pb.rule_text}) AS rules
+            """,
+            id=clause_id,
+            tenant_id=tenant_id,
+        )
+        if not rows:
+            return []
+        regs = [r for r in rows[0]["regs"] if r.get("target_id")]
+        rules = [r for r in rows[0]["rules"] if r.get("target_id")]
+        return regs + rules
 
 
 # --------------------------------------------------------------------------- #

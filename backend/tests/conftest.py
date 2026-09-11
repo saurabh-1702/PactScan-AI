@@ -25,6 +25,12 @@ from app.models.clause import (
     OverrideCheckResult,
     _LLMClause,
 )
+from app.models.redline import (
+    ContrarianArgument,
+    JudgeVerdict,
+    NegotiationFallback,
+    ProposedRedline,
+)
 from tests.fixtures.generate_fixtures import (
     CONTRACT_A_PAGES,
     CONTRACT_B_PAGES,
@@ -83,10 +89,51 @@ class _FakeLLM:
             return self._override(prompt)
         if name == "BatchNLIResult":
             return self._batch_nli(prompt)
+        if name == "ProposedRedline":
+            return ProposedRedline(
+                proposed_clause_text=(
+                    "Liability for data-breach and confidentiality events shall not be capped "
+                    "below the greater of twelve (12) months' fees paid hereunder or the "
+                    "negotiated data-incident floor, and any change to this cap must be made by "
+                    "a signed written amendment to this Section, not a Statement of Work."
+                ),
+                rationale=(
+                    "Aligns the liability cap with the playbook's required floor and makes any "
+                    "future change explicit and conspicuous rather than buried in an SOW addendum."
+                ),
+                confidence=80,
+            )
+        if name == "ContrarianArgument":
+            return ContrarianArgument(
+                argument=(
+                    "The SOW addendum expressly cross-references MSA Section 8.2(a) and was "
+                    "signed by both parties, so the counterparty had clear notice of the change."
+                ),
+                strongest_point="Explicit cross-reference puts the counterparty on notice.",
+                confidence=40,
+            )
+        if name == "JudgeVerdict":
+            return JudgeVerdict(
+                verdict="downgraded",
+                final_confidence=60,
+                reasoning=(
+                    "The cross-reference mitigates the notice concern somewhat, but the cap "
+                    "change still was not made as a conspicuous MSA amendment, so a residual "
+                    "concern remains."
+                ),
+            )
+        if name == "NegotiationFallback":
+            return NegotiationFallback(
+                predicted_pushback="The vendor will resist re-opening the MSA for a formal amendment.",
+                fallback_clause_text=(
+                    "Alternative: incorporate the SOW's liability cap by reference directly into "
+                    "MSA Section 8.2(a) via a short, separately-signed addendum."
+                ),
+            )
         raise AssertionError(f"_FakeLLM has no route for schema {name}")
 
     async def generate_text(self, prompt, system_prompt=None):
-        raise AssertionError("generate_text not expected in Phase 1")
+        raise AssertionError("generate_text not expected in this suite")
 
     # -- clause extraction --------------------------------------------
     def _extract(self, prompt: str) -> ClauseExtractionResult:
@@ -323,6 +370,48 @@ def fake_llm(monkeypatch):
     monkeypatch.setattr("app.llm.client.generate_structured", fake.generate_structured)
     monkeypatch.setattr("app.llm.client.generate_text", fake.generate_text)
     return fake
+
+
+def _fake_embedding_vector(text: str) -> list[float]:
+    import hashlib
+
+    digest = hashlib.sha256(text.encode("utf-8")).digest()
+    return [b / 255.0 for b in digest[:16]]
+
+
+@pytest.fixture
+def fake_embed(monkeypatch):
+    async def _embed(text: str) -> list[float]:
+        return _fake_embedding_vector(text)
+
+    monkeypatch.setattr("app.llm.client.generate_embedding", _embed)
+    return _embed
+
+
+@pytest.fixture
+def db_session():
+    """An in-memory SQLite session for redline_suggestions — no Docker/Postgres
+    needed for the mocked suite."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    import app.db.models  # noqa: F401 - registers RedlineSuggestion on Base
+    from app.db.postgres_client import Base
+
+    # StaticPool + check_same_thread=False: a single shared in-memory SQLite
+    # connection, since FastAPI's TestClient runs requests on another thread.
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(bind=engine)
+    session = sessionmaker(bind=engine)()
+    try:
+        yield session
+    finally:
+        session.close()
 
 
 @pytest.fixture

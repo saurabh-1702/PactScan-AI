@@ -49,6 +49,8 @@ class ExtractedClause(BaseModel):
     section_header: str
     raw_text: str
     confidence: ConfidenceLevel
+    # Set lazily by the Suggest agent's Retriever (Phase 2) — never populated by Detect.
+    embedding: list[float] | None = None
 
 
 class Finding(BaseModel):

@@ -45,6 +45,16 @@ async def lifespan(_app: FastAPI):
     except Exception as exc:  # noqa: BLE001 - non-fatal: dashboard/detect degrade gracefully
         logger.warning("Playbook/regulation seeding skipped: %s", exc)
 
+    # --- Create application tables (idempotent; no migration framework yet) ---
+    try:
+        from app.db import models as _db_models  # noqa: F401 - registers tables on Base
+        from app.db.postgres_client import Base, engine
+
+        Base.metadata.create_all(bind=engine)
+        logger.info("PostgreSQL tables ensured (redline_suggestions, ...)")
+    except Exception as exc:  # noqa: BLE001 - non-fatal: degrades gracefully like Neo4j seeding
+        logger.warning("PostgreSQL table creation skipped: %s", exc)
+
     yield
 
     neo4j_client.close_driver()
@@ -62,8 +72,10 @@ app.add_middleware(
 
 
 from app.api.detect import router as detect_router  # noqa: E402
+from app.api.suggest import router as suggest_router  # noqa: E402
 
 app.include_router(detect_router)
+app.include_router(suggest_router)
 
 
 @app.get("/health")
