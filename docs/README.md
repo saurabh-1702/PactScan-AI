@@ -13,5 +13,17 @@ This folder holds the project specification and the phase-by-phase build plan.
 
 ## Current status
 
-**Phase 0 complete — Repository setup & local dev environment.** Scaffold only;
-no agent logic. See the root `README.md` for setup instructions.
+**Phase 1 complete — Detect agent.** Ingests a vendor DPA (LlamaParse), extracts
+clauses, writes a Neo4j knowledge graph with `OVERRIDES` relationships, checks
+clauses against the playbook + DPDP (primary) / GDPR (secondary), and returns a
+severity-scored risk report with page/section citations.
+
+- `POST /api/detect` (file upload) and `GET /api/detect/{contract_id}`
+- Frontend: `/detect` upload + findings view
+- LLM: provider-agnostic abstraction (`backend/app/llm/`) — response cache →
+  7-tier Gemini model chain → multi-account fallback
+- Tests: `cd backend && venv\Scripts\Activate.ps1 && pytest` (mocked, no keys
+  needed); `pytest -m live` needs `GEMINI_API_KEYS` + `LLAMA_CLOUD_API_KEY` in
+  `backend\.env`
+
+**Phase 0 — Repository setup & local dev environment.** Scaffold; see root `README.md`.

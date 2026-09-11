@@ -31,9 +31,26 @@ class Settings(BaseSettings):
     # --- Redis ---
     redis_url: str = "redis://localhost:6379/0"
 
-    # --- LLM provider (Google Gemini, free tier, multi-account) ---
+    # --- LLM providers ---
+    # Order the fallback walks: every account+tier of the first provider, then
+    # the next. Groq's free tier is far larger than Gemini's, so it leads.
+    llm_provider_order: str = "groq,gemini"
+    llm_provider: str = "groq"  # legacy alias; provider_order is authoritative
+    llm_tier_cooldown_seconds: int = 60
+
+    # --- Groq (primary) ---
+    groq_api_keys: str = ""
+    # Verified against GET /openai/v1/models for the project's Groq account
+    # (2026-09) — llama-3.3-70b-versatile / llama-3.1-8b-instant have been
+    # retired from Groq. Re-check with `curl.exe https://api.groq.com/openai/v1/models
+    # -H "Authorization: Bearer $GROQ_API_KEY"` if a tier ever 404s again.
+    groq_model_tiers_raw: str = (
+        "openai/gpt-oss-120b,openai/gpt-oss-20b,qwen/qwen3.8-27b,"
+        "qwen/qwen3.6-27b,openai/gpt-oss-safeguard-20b"
+    )
+
+    # --- Google Gemini (fallback, free tier, multi-account) ---
     gemini_api_keys: str = ""
-    llm_provider: str = "gemini"
 
     gemini_model_tier_1: str = "gemini-3.8-flash"
     gemini_model_tier_2: str = "gemini-3.7-flash"
@@ -49,21 +66,38 @@ class Settings(BaseSettings):
     # --- LLM response cache ---
     llm_cache_enabled: bool = True
     llm_cache_dir: str = ".llm_cache"
-    llm_prompt_version: str = "v1"
+    llm_prompt_version: str = "v3"  # bump on any prompt/schema change (v3: conservative NLI prompt + Groq)
 
     # --- Optional secondary provider ---
     anthropic_api_key: str = ""
 
     # --- LlamaParse (Phase 1+) ---
     llama_cloud_api_key: str = ""
+    llama_parse_tier: str = "fast"  # fast | cost_effective | agentic | agentic_plus
 
     # --- App ---
     environment: str = "development"
 
+    @staticmethod
+    def _csv(value: str) -> list[str]:
+        return [v.strip() for v in value.split(",") if v.strip()]
+
+    @property
+    def provider_order(self) -> list[str]:
+        return self._csv(self.llm_provider_order) or ["groq", "gemini"]
+
+    @property
+    def groq_api_key_list(self) -> list[str]:
+        return self._csv(self.groq_api_keys)
+
+    @property
+    def groq_model_tiers(self) -> list[str]:
+        return self._csv(self.groq_model_tiers_raw)
+
     @property
     def gemini_api_key_list(self) -> list[str]:
         """Parsed, priority-ordered list of Google AI Studio API keys."""
-        return [k.strip() for k in self.gemini_api_keys.split(",") if k.strip()]
+        return self._csv(self.gemini_api_keys)
 
     @property
     def gemini_model_tiers(self) -> list[str]:

@@ -1,16 +1,29 @@
+# --- Web framework ---
 fastapi==0.141.1
 uvicorn[standard]==0.34.0
+python-multipart==0.0.32          # required for FastAPI file uploads (POST /api/detect)
+
+# --- Config / validation ---
 # pydantic/pydantic-settings bumped from the Phase 0 prompt's pins (2.10.4 / 2.6.1):
 # those have no cp314 wheel and fail to build pydantic-core from source on
 # Python 3.14 (PyO3 0.22.6 caps at 3.13). See docs/SETUP_NOTES.md.
 pydantic==2.13.5
 pydantic-settings==2.15.0
+python-dotenv==1.2.3
+
+# --- Datastores ---
 neo4j==6.2.0
 sqlalchemy==2.0.44
-psycopg2-binary==2.9.13  # 2.9.10 (prompt pin) cp314 wheel fails DLL load on Python 3.14; see docs/SETUP_NOTES.md
+psycopg2-binary==2.9.13           # 2.9.10 (prompt pin) cp314 wheel fails DLL load on Python 3.14; see docs/SETUP_NOTES.md
 redis==5.2.1
-python-dotenv==1.2.3
-pytest==8.3.4
-pytest-asyncio==0.25.0
+
+# --- LLM + document parsing (Phase 1) ---
+groq==1.7.0                      # primary LLM provider (free tier >> Gemini's); OpenAI-compatible
+google-genai>=1.51.0             # fallback LLM provider; provides client.interactions.create
+llama-cloud==2.16.0              # new package (client.parsing.parse); replaces the deprecated llama-cloud-services
+
+# --- Test / fixtures ---
+pytest==9.1.1                     # prompt said 8.3.4; bumped with pytest-asyncio (below)
+pytest-asyncio==1.4.0            # prompt said 0.25.0; 0.25 spams asyncio-policy DeprecationWarnings on py3.14
 httpx==0.28.1
-google-genai>=1.51.0
+reportlab==5.0.1                  # prompt said 4.2.5; 5.0.1 is the current cp314-compatible release
