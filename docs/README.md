@@ -13,7 +13,7 @@ This folder holds the project specification and the phase-by-phase build plan.
 
 ## Current status
 
-**Phase 3 complete — Fix & Learn + human approval gate.** Every Suggest
+**Phase 3 complete and merged to `develop` — Fix & Learn + human approval gate.** Every Suggest
 output auto-enters a pending approval queue; nothing is ever written into a
 real document except through `POST /api/approvals/{id}/decide`, and rejecting
 never touches a file (proven by an explicit test, not just inspection).
