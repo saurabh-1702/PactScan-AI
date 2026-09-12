@@ -31,6 +31,14 @@ from app.models.redline import (
     NegotiationFallback,
     ProposedRedline,
 )
+from app.models.ask import (
+    AskAnswer,
+    AskScope,
+    AskSource,
+    DocumentScope,
+    GeneralLegalAnswer,
+    ScopeClassification,
+)
 from tests.fixtures.generate_fixtures import (
     CONTRACT_A_PAGES,
     CONTRACT_B_PAGES,
@@ -130,7 +138,110 @@ class _FakeLLM:
                     "MSA Section 8.2(a) via a short, separately-signed addendum."
                 ),
             )
+        if name == "ScopeClassification":
+            return self._classify_scope(prompt)
+        if name == "AskAnswer":
+            return self._ask_answer(prompt)
+        if name == "GeneralLegalAnswer":
+            return GeneralLegalAnswer(
+                answer_text=(
+                    "This is general legal-tech information, not specific to your contracts, and "
+                    "not a substitute for advice from a qualified lawyer."
+                )
+            )
         raise AssertionError(f"_FakeLLM has no route for schema {name}")
+
+    # -- Ask agent routing (Phase 4) ---------------------------------
+    _FIXTURE_NAMES = (
+        "contract_a_conflict",
+        "contract_b_regulation_gap",
+        "contract_c_clean",
+    )
+
+    def _extract_user_message(self, prompt: str) -> str:
+        return _section(prompt, "USER MESSAGE:\n", "\n\nClassify it.")
+
+    def _mentioned_fixture(self, lower_text: str) -> str | None:
+        """Recognizes any 'contract_xxx'-shaped token as a named-document
+        reference, whether or not it's one of the real fixtures — so an
+        unmatched name (e.g. 'contract_z_never_uploaded') still routes through
+        the single-document path and correctly fails to fuzzy-match later,
+        rather than silently falling back to a portfolio-wide search."""
+        m = re.search(r"contract_[a-z0-9_]+", lower_text)
+        if m:
+            return m.group(0)
+        for name in self._FIXTURE_NAMES:
+            if name.replace("_", " ") in lower_text:
+                return name
+        return None
+
+    def _classify_scope(self, prompt: str) -> ScopeClassification:
+        message = self._extract_user_message(prompt)
+        lower = message.lower()
+
+        if any(w in lower for w in ("weather", "capital of france", "recipe", "football score")):
+            return ScopeClassification(scope=AskScope.OUT_OF_SCOPE)
+
+        if lower.strip().startswith("edit "):
+            rest = message[len("edit "):]
+            if " to " in rest:
+                doc_part, change_part = rest.split(" to ", 1)
+            elif ":" in rest:
+                doc_part, change_part = rest.split(":", 1)
+            else:
+                doc_part, change_part = rest, "Apply the requested change."
+            return ScopeClassification(
+                scope=AskScope.EDIT_INSTRUCTION,
+                document_scope=DocumentScope.SINGLE,
+                mentioned_document_name=doc_part.strip(),
+                requested_change=change_part.strip(),
+            )
+
+        if "what is the dpdp act" in lower or "typical liability cap" in lower or "legal tech" in lower:
+            return ScopeClassification(scope=AskScope.GENERAL_LEGAL_TECH_QUESTION)
+
+        status_markers = (
+            "what issues", "what was suggested", "what has been fixed", "findings",
+            "were detected", "been approved", "compliance status", "what's pending",
+        )
+        if any(m in lower for m in status_markers):
+            doc_name = self._mentioned_fixture(lower)
+            time_ref = None
+            for phrase in ("last week", "this week", "last month", "this month", "today", "yesterday"):
+                if phrase in lower:
+                    time_ref = phrase
+            return ScopeClassification(
+                scope=AskScope.COMPLIANCE_STATUS_QUESTION,
+                document_scope=DocumentScope.SINGLE if doc_name else DocumentScope.PORTFOLIO,
+                mentioned_document_name=doc_name,
+                time_reference=time_ref,
+            )
+
+        doc_name = self._mentioned_fixture(lower)
+        return ScopeClassification(
+            scope=AskScope.CONTRACT_QUESTION,
+            document_scope=DocumentScope.SINGLE if doc_name else DocumentScope.PORTFOLIO,
+            mentioned_document_name=doc_name,
+        )
+
+    def _ask_answer(self, prompt: str) -> AskAnswer:
+        # echoes back whichever [document_name, page N] / [document_name] markers
+        # actually appear in the retrieved-context block passed into the prompt —
+        # a deterministic proxy for "the answer cites what was actually retrieved"
+        matches = re.findall(r"\[([^,\]]+)(?:,\s*page\s*(\d+))?\]", prompt)
+        seen: set[tuple[str, int]] = set()
+        sources: list[AskSource] = []
+        for name, page in matches:
+            name = name.strip()
+            page_number = int(page) if page else 0
+            key = (name, page_number)
+            if key in seen:
+                continue
+            seen.add(key)
+            sources.append(AskSource(document_name=name, page_number=page_number))
+        if not sources:
+            return AskAnswer(answer_text="I don't have information about that in your contract portfolio.", sources=[])
+        return AskAnswer(answer_text="Here is what the portfolio shows, with citations.", sources=sources)
 
     async def generate_text(self, prompt, system_prompt=None):
         raise AssertionError("generate_text not expected in this suite")

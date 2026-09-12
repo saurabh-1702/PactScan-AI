@@ -152,3 +152,65 @@ export async function getDocumentVersions(contractId: string): Promise<DocumentV
 export function documentDownloadUrl(versionId: string): string {
   return `${API_BASE_URL}/api/documents/version/${versionId}/download`;
 }
+
+// --- Ask agent (Phase 4) ------------------------------------------------
+
+export type AskResponseType =
+  | "contract_answer"
+  | "status_answer"
+  | "edit_draft"
+  | "general_info"
+  | "out_of_scope"
+  | "abstained";
+
+export interface AskSourceInfo {
+  document_name: string;
+  page_number: number;
+}
+
+export interface AskApiResponse {
+  session_id: string;
+  type: AskResponseType;
+  answer_text: string;
+  sources: AskSourceInfo[];
+  suggestion_id: string | null;
+  approval_id: string | null;
+}
+
+export interface ChatSessionInfo {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  message_count: number;
+}
+
+export interface ChatMessageInfo {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  response_type: AskResponseType | null;
+  sources: AskSourceInfo[];
+  suggestion_id: string | null;
+  approval_id: string | null;
+  created_at: string;
+}
+
+export async function postAsk(message: string, sessionId?: string | null): Promise<AskApiResponse> {
+  const res = await fetch(`${API_BASE_URL}/api/ask`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message, session_id: sessionId ?? null }),
+  });
+  return handleJson<AskApiResponse>(res);
+}
+
+export async function getChatSessions(): Promise<ChatSessionInfo[]> {
+  const res = await fetch(`${API_BASE_URL}/api/ask/sessions`);
+  return handleJson<ChatSessionInfo[]>(res);
+}
+
+export async function getChatMessages(sessionId: string): Promise<ChatMessageInfo[]> {
+  const res = await fetch(`${API_BASE_URL}/api/ask/sessions/${sessionId}/messages`);
+  return handleJson<ChatMessageInfo[]>(res);
+}

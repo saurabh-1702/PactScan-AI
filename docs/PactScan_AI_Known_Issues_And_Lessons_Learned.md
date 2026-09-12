@@ -231,3 +231,13 @@ Current verified working tier list (2026-09): `openai/gpt-oss-120b,openai/gpt-os
 
 ### 10.5 — Mocked tests must not require Docker/Neo4j
 **Pattern established:** the Detect agent's graph access goes through a `GraphStore` interface (`app/agents/detect/graph_store.py`) with `Neo4jGraphStore` and `InMemoryGraphStore`. All mocked tests use the in-memory store; only `-m live` tests and the running API touch Neo4j. Keep this split for every later phase's agent — a mocked `pytest -v` run must never need a container up.
+
+## 11. Issues found during the current build — Phase 4 (2026-09-12)
+
+### 11.1 — Fuzzy document-name matching false-positived on shared generic words
+**The bug:** `find_contract_by_name()` scored name matches by raw word overlap. A query for a document name that shares only a generic word like "contract" with a real filename (e.g. `contract_z_never_uploaded` vs `contract_a_conflict.pdf`) scored ~0.33 overlap — enough to clear the original 0.3 threshold and wrongly "find" the wrong document instead of correctly reporting no match.
+**The fix, applied (`app/agents/ask/ask_retriever.py`):** strip a small set of domain-generic tokens (`contract`, `agreement`, `document`, `the`, `vendor`, `dpa`, `msa`, `pdf`, `doc`, `docx`) from both sides before scoring; tightened the substring shortcut from "either contains the other" to exact match; raised the overlap threshold from 0.3 to 0.5. **Any future name/entity-matching heuristic should strip domain-generic vocabulary before scoring overlap, or common words alone will look like a match.**
+
+### 11.2 — Neo4j vector index top-K is global, not per-filter
+**The bug:** `db.index.vector.queryNodes` returns its K nearest nodes across the *entire* index before any subsequent `WHERE tenant_id = ... AND contract_id = ...` filter is applied. Asking for `top_k=6` on a single-document question could silently return fewer than 6 (or zero) results if the globally-nearest 6 clauses all belonged to other contracts.
+**The fix, applied (`app/agents/detect/graph_store.py::vector_search_similar_clauses`):** over-fetch before filtering — `fetch_k = min(max(top_k * 5, 25), 200)` — then apply the tenant/contract filter and `LIMIT top_k` afterward. **Any code that combines a Neo4j vector index query with a post-hoc property filter must over-fetch; the index itself does not know about the filter.**

@@ -294,3 +294,94 @@ already supported this) and splitting the `/approvals` page into a **Pending**
 section (actionable) and a **Decided** section (read-only, status badge,
 download link) below it. Locked in with
 `test_list_approvals_without_status_filter_returns_decided_items_too`.
+
+---
+
+## Phase 4
+
+### Scope grew beyond the literal prompt — by explicit request
+
+The Phase 4 prompt specifies 4 routing categories (PORTFOLIO_QUESTION,
+SINGLE_DOCUMENT_QUESTION, EDIT_INSTRUCTION, OUT_OF_SCOPE) and no chat
+persistence. The build was deliberately expanded, mid-phase, on request:
+
+- **Two extra categories**: `COMPLIANCE_STATUS_QUESTION` (what did Detect/
+  Suggest/Fix & Learn actually do — a different retrieval mode: it queries
+  Neo4j `Finding` nodes + Postgres `redline_suggestions`/`approvals` directly,
+  not vector search over clause text) and `GENERAL_LEGAL_TECH_QUESTION`
+  (general legal-tech/regulatory knowledge, answered from the model's own
+  knowledge, explicitly NOT portfolio-grounded, no fabricated citations, with
+  a "not legal advice" disclaimer).
+- **Chat history persistence** — new `chat_sessions` / `chat_messages`
+  Postgres tables, `GET /api/ask/sessions` + `GET /api/ask/sessions/{id}/messages`,
+  and a real sidebar-plus-thread chat UI at `/ask` (not a single Q&A box).
+  Sessions are tenant-wide, not yet per-user — Phase 5 adds login/roles, at
+  which point `chat_sessions` gains a `user_id` column.
+
+### Adapting, not literally calling, Phase 2's Retriever
+
+Phase 2's `retrieve_context()` starts from one already-known flagged clause —
+it doesn't fit a free-text question. `ask_retriever.py` reuses the actual
+shared infrastructure instead: `generate_embedding`, the (now extended)
+`vector_search_similar_clauses`, and the lazy-embedding helpers
+(`ensure_embeddings_for_contract` / `backfill_all`) from Phase 2's
+`embed_clauses.py`.
+
+### `vector_search_similar_clauses` extended (backward compatible)
+
+Added an optional `contract_id` filter (for single-document questions) and
+fixed a real correctness gap: Neo4j's vector index returns its top-K matches
+*globally* before any `WHERE` filter narrows tenant/contract, so a small K
+could silently return too few (or zero) results once filtered. Now
+over-fetches (`min(max(top_k*5, 25), 200)`) before filtering and re-limiting.
+Also now returns `page_number` (needed for Ask's citations). Existing callers
+(Suggest's Retriever) are unaffected — the new parameter defaults to `None`.
+
+### Document-name matching is a simple heuristic, not a fuzzy-match library
+
+`find_contract_by_name()` does substring + word-overlap scoring after
+stripping a small set of domain-generic tokens (`contract`, `agreement`,
+`document`, `dpa`, `msa`, ...) that would otherwise make every filename look
+like a match. Deliberately simple — swap for `rapidfuzz`/`difflib` if this
+proves too weak against real filenames in practice.
+
+### Regulation text is always folded into content-question context
+
+Rather than requiring vector search to surface the ~5 seeded `RegulationClause`
+nodes, `ask_retriever.py` always appends them to the retrieved context for
+every `CONTRACT_QUESTION` — cheap (there are only 3 DPDP + 2 GDPR clauses),
+and it guarantees "what does DPDP Section 9 require" gets a real citation
+instead of depending on embedding similarity to find it. Regulation citations
+use `page_number = 0` (not paginated) — the frontend hides the page number
+when it's 0.
+
+### Time parsing for status questions
+
+`status_query.parse_time_reference()` checks a small relative-phrase map
+("last week", "this month", ...) first, then a `N days/weeks/months/years`
+regex, then falls back to `python-dateutil`'s fuzzy parser. If nothing
+parses, it returns `None` (meaning "show everything, most recent first")
+rather than erroring — never blocks an answer over an unparseable date.
+
+### Similarity-threshold abstention can't be tested via the fake embeddings
+
+The mocked test suite's fake embeddings are deterministic-but-arbitrary
+(hash-derived, all-non-negative components), which tends to produce
+artificially high cosine similarity between unrelated texts — so the
+threshold branch doesn't naturally trigger under the fakes. Tested instead by
+monkeypatching `ASK_SIMILARITY_THRESHOLD` to an unreachable value in one
+dedicated test, proving the branch itself works; the *literal* prompt-required
+abstention case (unknown document name) is fully deterministic and needs no
+such workaround.
+
+### Confirmed against real Neo4j + real Postgres
+
+All 7 response types (contract/portfolio/status/edit/general/out-of-scope/
+abstained) plus chat-session persistence were run end-to-end against the real
+containers before this phase was called done, in addition to the 15 mocked
+tests. Note for anyone doing this again: `list_contracts()` will surface
+*every* contract ever ingested into the tenant across every prior testing
+session — this is correct, by-design behaviour for a portfolio-wide Ask
+agent (Section 4.5 of the project spec: "every contract a company has ever
+uploaded... regardless of when"), not a bug, but it does mean old manual-test
+contracts will show up in portfolio answers unless deliberately wiped.

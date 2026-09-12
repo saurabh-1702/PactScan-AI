@@ -13,6 +13,25 @@ This folder holds the project specification and the phase-by-phase build plan.
 
 ## Current status
 
+**Phase 4 built — Ask agent (chatbot, contract Q&A, compliance-status Q&A, general legal-tech Q&A, edit-instruction handoff, chat history).** Scope
+expanded beyond the literal phase prompt at the user's request: two extra
+routing categories (`COMPLIANCE_STATUS_QUESTION`, `GENERAL_LEGAL_TECH_QUESTION`)
+alongside the required `CONTRACT_QUESTION` / `EDIT_INSTRUCTION` / `OUT_OF_SCOPE`,
+plus persistent chat sessions so a tenant can revisit prior conversations like
+a normal chatbot. Edit instructions hand off into Phase 2's Suggest pipeline
+(`suggest_standalone`) and never touch the Phase 3 Executor or write a file —
+governance from Phase 3 is preserved end-to-end.
+
+- `POST /api/ask`, `GET /api/ask/sessions`, `GET /api/ask/sessions/{id}/messages`
+- Frontend: `/ask` — sidebar of past conversations + chat thread, response-type
+  badges, citation chips, link into the Approval Queue for edit drafts
+- New: `backend/app/agents/ask/` (scope_classifier, ask_retriever,
+  answer_generator, status_query, general_legal, edit_handoff, pipeline),
+  `chat_sessions` / `chat_messages` Postgres tables, `vector_search_similar_clauses`
+  extended with an optional `contract_id` filter + `list_contracts()` on `GraphStore`
+- Tests: 47 mocked pass (13 new: 9 agent-level + 3 API + chat persistence);
+  verified live against real Neo4j + Postgres across all 7 response types
+
 **Phase 3 complete and merged to `develop` — Fix & Learn + human approval gate.** Every Suggest
 output auto-enters a pending approval queue; nothing is ever written into a
 real document except through `POST /api/approvals/{id}/decide`, and rejecting

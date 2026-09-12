@@ -160,8 +160,15 @@ class GraphStore(abc.ABC):
         tenant_id: str = DEMO_TENANT,
         top_k: int = 5,
         exclude_clause_id: str | None = None,
+        contract_id: str | None = None,
     ) -> list[dict]:
-        """Each dict: {clause_id, contract_id, clause_type, raw_text, similarity}."""
+        """Each dict: {clause_id, contract_id, clause_type, raw_text, page_number,
+        similarity}. ``contract_id`` restricts the search to one contract
+        (Phase 4's single-document questions); ``None`` searches the whole tenant."""
+
+    @abc.abstractmethod
+    def list_contracts(self, tenant_id: str = DEMO_TENANT) -> list[dict]:
+        """Every contract in the tenant. Each dict: {contract_id, filename}."""
 
     @abc.abstractmethod
     def get_override_relationships(
@@ -316,10 +323,14 @@ class InMemoryGraphStore(GraphStore):
             and (contract_id is None or c.contract_id == contract_id)
         ]
 
-    def vector_search_similar_clauses(self, embedding, tenant_id=DEMO_TENANT, top_k=5, exclude_clause_id=None):
+    def vector_search_similar_clauses(
+        self, embedding, tenant_id=DEMO_TENANT, top_k=5, exclude_clause_id=None, contract_id=None
+    ):
         scored = []
         for (t, cid), c in self.clauses.items():
             if t != tenant_id or c.embedding is None or cid == exclude_clause_id:
+                continue
+            if contract_id is not None and c.contract_id != contract_id:
                 continue
             scored.append(
                 {
@@ -327,11 +338,19 @@ class InMemoryGraphStore(GraphStore):
                     "contract_id": c.contract_id,
                     "clause_type": c.clause_type.value,
                     "raw_text": c.raw_text,
+                    "page_number": c.page_number,
                     "similarity": _cosine_similarity(embedding, c.embedding),
                 }
             )
         scored.sort(key=lambda d: d["similarity"], reverse=True)
         return scored[:top_k]
+
+    def list_contracts(self, tenant_id=DEMO_TENANT):
+        return [
+            {"contract_id": c["id"], "filename": c["filename"]}
+            for (t, _), c in self.contracts.items()
+            if t == tenant_id
+        ]
 
     def get_override_relationships(self, clause_id, tenant_id=DEMO_TENANT):
         out: list[dict] = []
@@ -748,22 +767,42 @@ class Neo4jGraphStore(GraphStore):
             """
         )
 
-    def vector_search_similar_clauses(self, embedding, tenant_id=DEMO_TENANT, top_k=5, exclude_clause_id=None):
+    def vector_search_similar_clauses(
+        self, embedding, tenant_id=DEMO_TENANT, top_k=5, exclude_clause_id=None, contract_id=None
+    ):
         self.ensure_vector_index()
+        # The vector index returns its top-K matches GLOBALLY, before the WHERE
+        # filter below narrows to this tenant/contract. Over-fetch so filtering
+        # doesn't silently starve the result set down to fewer than top_k (or
+        # zero, if none of the globally-nearest neighbours happen to be in
+        # scope) — then re-limit to top_k after filtering.
+        fetch_k = min(max(top_k * 5, 25), 200)
         rows = self._run(
             """
-            CALL db.index.vector.queryNodes('clause_embeddings', $k, $embedding)
+            CALL db.index.vector.queryNodes('clause_embeddings', $fetch_k, $embedding)
             YIELD node, score
             WHERE node.tenant_id = $tenant_id AND node.id <> coalesce($exclude, '')
+              AND ($contract_id IS NULL OR node.contract_id = $contract_id)
             RETURN node.id AS clause_id, node.contract_id AS contract_id,
-                   node.clause_type AS clause_type, node.raw_text AS raw_text, score AS similarity
+                   node.clause_type AS clause_type, node.raw_text AS raw_text,
+                   node.page_number AS page_number, score AS similarity
+            ORDER BY similarity DESC
+            LIMIT $top_k
             """,
-            k=top_k,
+            fetch_k=fetch_k,
+            top_k=top_k,
             embedding=list(embedding),
             tenant_id=tenant_id,
             exclude=exclude_clause_id,
+            contract_id=contract_id,
         )
         return rows
+
+    def list_contracts(self, tenant_id=DEMO_TENANT):
+        return self._run(
+            "MATCH (c:Contract {tenant_id: $tenant_id}) RETURN c.id AS contract_id, c.filename AS filename",
+            tenant_id=tenant_id,
+        )
 
     def get_override_relationships(self, clause_id, tenant_id=DEMO_TENANT):
         rows = self._run(

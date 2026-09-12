@@ -15,6 +15,9 @@ export default function Home() {
         <Link href="/approvals" className="text-sky-700 underline">
           Approval Queue
         </Link>
+        <Link href="/ask" className="text-sky-700 underline">
+          Ask
+        </Link>
       </nav>
     </main>
   );

@@ -109,3 +109,39 @@ class PlaybookFeedback(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
+
+
+class ChatSession(Base):
+    """One Ask-agent conversation. Tenant-wide, not yet per-user — Phase 5
+    adds login/roles, at which point this gains a user_id column."""
+
+    __tablename__ = "chat_sessions"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: f"cs_{uuid.uuid4().hex[:16]}")
+    tenant_id: Mapped[str] = mapped_column(String(40), index=True)
+    title: Mapped[str] = mapped_column(String(200), default="New conversation")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class ChatMessage(Base):
+    """One turn in a ChatSession. `sources_json` / `suggestion_id` /
+    `approval_id` are only ever set on assistant messages."""
+
+    __tablename__ = "chat_messages"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: f"cm_{uuid.uuid4().hex[:16]}")
+    session_id: Mapped[str] = mapped_column(String(40), ForeignKey("chat_sessions.id"), index=True)
+    role: Mapped[str] = mapped_column(String(10))  # "user" | "assistant"
+    content: Mapped[str] = mapped_column(Text)
+    response_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    sources_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    suggestion_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    approval_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
