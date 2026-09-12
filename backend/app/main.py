@@ -71,11 +71,15 @@ app.add_middleware(
 )
 
 
+from app.api.approvals import router as approvals_router  # noqa: E402
 from app.api.detect import router as detect_router  # noqa: E402
+from app.api.documents import router as documents_router  # noqa: E402
 from app.api.suggest import router as suggest_router  # noqa: E402
 
 app.include_router(detect_router)
 app.include_router(suggest_router)
+app.include_router(approvals_router)
+app.include_router(documents_router)
 
 
 @app.get("/health")

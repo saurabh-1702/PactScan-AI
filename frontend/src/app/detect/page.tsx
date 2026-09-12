@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import {
   postDetect,
@@ -60,9 +61,14 @@ export default function DetectPage() {
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-10">
-      <h1 className="text-2xl font-semibold tracking-tight">
-        PactScan AI — Detect
-      </h1>
+      <div className="flex items-baseline justify-between">
+        <h1 className="text-2xl font-semibold tracking-tight">
+          PactScan AI — Detect
+        </h1>
+        <Link href="/approvals" className="text-sm font-medium text-sky-700 underline">
+          Approval Queue →
+        </Link>
+      </div>
       <p className="mt-1 text-sm text-neutral-500">
         Upload a vendor DPA / MSA. Detect parses it, maps it into the knowledge
         graph, and checks it against the playbook + DPDP / GDPR.

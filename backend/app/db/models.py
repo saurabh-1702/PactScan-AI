@@ -12,7 +12,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.postgres_client import Base
@@ -31,6 +31,81 @@ class RedlineSuggestion(Base):
     contrarian_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     judge_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     negotiation_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class Approval(Base):
+    """The human-in-the-loop gate. `status` starts 'pending' (auto-created right
+    after a Suggest call succeeds) and is only ever changed by
+    POST /api/approvals/{id}/decide.
+
+    `edited_text` is an addition beyond the Phase 3 prompt's literal schema —
+    needed so a reviewer's "Edit" action (required by the frontend spec) has
+    somewhere to persist to; when set, the Executor writes this instead of the
+    original `proposed_text`.
+    """
+
+    __tablename__ = "approvals"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: f"apv_{uuid.uuid4().hex[:16]}")
+    redline_suggestion_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("redline_suggestions.id"), index=True
+    )
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    reviewer_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    edited_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class DocumentVersion(Base):
+    """Every write is a new row + a new file — nothing is ever edited in place.
+    `approval_id` is NULL for the original (version 1) capture; set to the
+    approval that authorized the write for every version after that.
+    """
+
+    __tablename__ = "document_versions"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: f"dv_{uuid.uuid4().hex[:16]}")
+    contract_id: Mapped[str] = mapped_column(String(40), index=True)
+    version_number: Mapped[int] = mapped_column(Integer)
+    file_path: Mapped[str] = mapped_column(String(500))
+    approval_id: Mapped[str | None] = mapped_column(
+        String(40), ForeignKey("approvals.id"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class AuditLog(Base):
+    """Append-only. Every state-changing action from Phase 3 onward writes a row."""
+
+    __tablename__ = "audit_log"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: f"al_{uuid.uuid4().hex[:16]}")
+    event_type: Mapped[str] = mapped_column(String(50), index=True)
+    entity_id: Mapped[str] = mapped_column(String(40), index=True)
+    details: Mapped[str] = mapped_column(Text)  # JSON-serialized, like Phase 2's *_json columns
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class PlaybookFeedback(Base):
+    """Lightweight stand-in for the full 'update the compliance playbook'
+    learning loop — for Phase 3, just proves the accepted-redline data is
+    actually being captured."""
+
+    __tablename__ = "playbook_feedback"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: f"pf_{uuid.uuid4().hex[:16]}")
+    clause_type: Mapped[str] = mapped_column(String(60))
+    accepted_text: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

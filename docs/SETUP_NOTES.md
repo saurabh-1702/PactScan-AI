@@ -207,3 +207,75 @@ Every new Cypher path — `CREATE VECTOR INDEX`, `db.index.vector.queryNodes`,
 `get_clause_by_id` — was exercised end-to-end against the running Neo4j
 container with a fake (deterministic, 768-dim) embedding function before this
 phase was called done, in addition to the mocked `InMemoryGraphStore` suite.
+
+---
+
+## Phase 3
+
+### The original-document gap the prompt assumed away
+
+The prompt assumes a `.docx` is already on file for the Executor to edit. Phase
+1/2 never persisted the original upload at all (Detect wrote it to a temp dir
+and deleted it), and our own test fixtures are PDFs — python-docx can't edit
+those. Resolved by:
+
+- `detect/pipeline.py::ingest_and_detect` gained an **optional** `db: Session
+  | None = None` parameter (default preserves exact Phase 1/2 behaviour for
+  every existing caller/test). When provided, it now captures
+  `document_versions` version 1 after a successful Detect run.
+- If the upload is already a `.docx`, it's stored byte-for-byte.
+- If it isn't (our fixtures, and plausibly many real uploads), a `.docx` is
+  **synthesized** from Detect's own structured clause extraction — one
+  paragraph per clause, in page order — via
+  `agents/fix_and_learn/document_store.py::synthesize_docx_bytes`. This
+  guarantees the Executor's exact-text clause matching works against the same
+  `raw_text` Detect/Suggest already reasoned about.
+- **This is a documented demo-scope simplification**, not a production
+  design — a real build would need genuine PDF→Word conversion, or to require
+  Word-native uploads for anything headed toward an approval-gated write.
+
+### `approvals.edited_text` — an addition beyond the prompt's literal schema
+
+The prompt's `approvals` table has no column to hold a reviewer's edited
+text, but the frontend spec explicitly requires an "Edit" action before
+approving. Added `edited_text` (nullable) to `approvals`; when set, the
+Executor writes it instead of `redline_suggestions.proposed_text`.
+
+### "Copy then edit" interpreted as one new version, not two
+
+The prompt's steps 2 and 4 read as if the Executor first copies-and-registers
+the *pre-edit* file as a new version, then separately saves the *edited* file
+as another new version — which would double-count. Implemented as **one**
+new version per approval: copy the current version's bytes to a fresh path
+(so the current version's own file is never touched), edit the copy, then
+register that single edited copy as `version_number = latest + 1`. The prior
+version's row and file are provably untouched (asserted by
+`test_decide_approved_writes_new_version_and_audit_log`).
+
+### Auto-approval creation wired into Phase 2, not just the API
+
+Per the prompt's "wire this in automatically" instruction,
+`suggest/pipeline.py::_run_pipeline` creates the `pending` `Approval` row (+
+an `audit_log` row) itself, immediately after persisting the
+`redline_suggestion` — not only via a separate manual `POST /api/approvals`
+call, which still exists for standalone re-queuing.
+
+### No live test needed for this phase
+
+The Executor and approval-queue logic make no LLM calls at all (pure local
+file/DB work) — Phase 1/2's existing live tests already cover the only
+LLM-touching step (Suggest, which produces the row Phase 3 acts on), so no
+`@pytest.mark.live` additions were needed here.
+
+### Confirmed against real Neo4j + real PostgreSQL (not just SQLite-mocked)
+
+The full chain (Detect -> synthesized v1.docx -> Suggest -> auto-pending
+Approval -> Executor guard rejecting a pending approval -> approve -> v2.docx
+with both original and proposed text) was run end-to-end against the actual
+Neo4j and Postgres containers before this phase was called done, in addition
+to the mocked `InMemoryGraphStore` + in-memory SQLite test suite. This also
+caught a real bug the SQLite tests couldn't: SQLite doesn't enforce foreign
+keys by default, so a cleanup script that deleted `approvals` before
+`document_versions` succeeded silently there but correctly failed with a real
+`ForeignKeyViolation` against Postgres — confirming the FK constraints are
+actually live in production, not just declared in the ORM.

@@ -87,3 +87,61 @@ export async function postSuggestFromFinding(findingId: string): Promise<Suggest
   });
   return handleJson<SuggestResult>(res);
 }
+
+// --- Approvals / Fix & Learn (Phase 3) ---------------------------------
+
+export interface Approval {
+  id: string;
+  redline_suggestion_id: string;
+  status: "pending" | "approved" | "rejected";
+  reviewer_note: string | null;
+  edited_text: string | null;
+  decided_at: string | null;
+  created_at: string;
+  finding_id: string | null;
+  contract_id: string;
+  clause_id: string;
+  original_clause_text: string;
+  proposed_text: string;
+  rationale: string;
+  confidence: number;
+}
+
+export interface DocumentVersionInfo {
+  id: string;
+  contract_id: string;
+  version_number: number;
+  approval_id: string | null;
+  created_at: string;
+}
+
+export async function getPendingApprovals(): Promise<Approval[]> {
+  const res = await fetch(`${API_BASE_URL}/api/approvals?status=pending`);
+  return handleJson<Approval[]>(res);
+}
+
+export async function decideApproval(
+  approvalId: string,
+  decision: "approved" | "rejected",
+  options?: { note?: string; editedText?: string },
+): Promise<Approval> {
+  const res = await fetch(`${API_BASE_URL}/api/approvals/${approvalId}/decide`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      decision,
+      note: options?.note ?? null,
+      edited_text: options?.editedText ?? null,
+    }),
+  });
+  return handleJson<Approval>(res);
+}
+
+export async function getDocumentVersions(contractId: string): Promise<DocumentVersionInfo[]> {
+  const res = await fetch(`${API_BASE_URL}/api/documents/contract/${contractId}/versions`);
+  return handleJson<DocumentVersionInfo[]>(res);
+}
+
+export function documentDownloadUrl(versionId: string): string {
+  return `${API_BASE_URL}/api/documents/version/${versionId}/download`;
+}

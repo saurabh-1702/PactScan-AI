@@ -222,5 +222,12 @@ Current verified working tier list (2026-09): `openai/gpt-oss-120b,openai/gpt-os
 **The bug:** a mocked test using `create_engine("sqlite:///:memory:")` plus a FastAPI `TestClient` hit `no such table` and `SQLite objects created in a thread can only be used in that same thread` — TestClient runs the request on a different thread than the test, and each new connection to `sqlite:///:memory:` is a *separate, empty* database unless pinned to one connection.
 **The fix:** `create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)`. Standard SQLAlchemy pattern for in-memory SQLite shared across threads — use it any time a mocked test drives Postgres-backed code through `TestClient` instead of calling the function directly.
 
+### 10.16 — SQLAlchemy Python-side `default=` isn't applied until flush
+**The bug:** `Approval(...)` then immediately reading `approval.id` (to put it in an `AuditLog.entity_id` before `db.commit()`) got `None` — the column's `default=lambda: uuid...` callable only runs when SQLAlchemy actually flushes the INSERT, not at Python object-construction time.
+**The fix:** call `db.add(approval); db.flush()` before referencing `approval.id`, then build the dependent row. Applies to any newly-constructed ORM object whose PK is a Python-side default and is needed before the enclosing `commit()`.
+
+### 10.17 — SQLite (mocked tests) doesn't enforce foreign keys; real Postgres does
+**Not a bug, a testing-fidelity note:** a cleanup script that deleted `approvals` rows before their dependent `document_versions` rows worked fine against the SQLite test DB but failed with a real `ForeignKeyViolation` against Postgres. SQLite doesn't enforce FK constraints by default; Postgres always does. Don't assume "the SQLite-mocked test passed" proves FK-respecting delete order — verify against real Postgres too when a change touches multiple related tables.
+
 ### 10.5 — Mocked tests must not require Docker/Neo4j
 **Pattern established:** the Detect agent's graph access goes through a `GraphStore` interface (`app/agents/detect/graph_store.py`) with `Neo4jGraphStore` and `InMemoryGraphStore`. All mocked tests use the in-memory store; only `-m live` tests and the running API touch Neo4j. Keep this split for every later phase's agent — a mocked `pytest -v` run must never need a container up.

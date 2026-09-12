@@ -11,9 +11,11 @@ import tempfile
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from sqlalchemy.orm import Session
 
 from app.agents.detect.graph_store import GraphStore, get_graph_store
 from app.agents.detect.pipeline import get_report, ingest_and_detect
+from app.db.postgres_client import get_db
 from app.models.clause import DetectReport
 
 logger = logging.getLogger("pactscan.api.detect")
@@ -32,6 +34,7 @@ def get_store() -> GraphStore:
 async def detect(
     file: UploadFile = File(...),
     store: GraphStore = Depends(get_store),
+    db: Session = Depends(get_db),
 ) -> DetectReport:
     filename = file.filename or "contract.pdf"
     suffix = Path(filename).suffix.lower()
@@ -49,7 +52,7 @@ async def detect(
     tmp_path = tmp_dir / filename
     tmp_path.write_bytes(data)
     try:
-        report = await ingest_and_detect(store, tmp_path, filename)
+        report = await ingest_and_detect(store, tmp_path, filename, db=db)
     except RuntimeError as exc:
         logger.exception("Detect pipeline failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
