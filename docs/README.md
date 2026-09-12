@@ -13,6 +13,26 @@ This folder holds the project specification and the phase-by-phase build plan.
 
 ## Current status
 
+**Phase 3 complete — Fix & Learn + human approval gate.** Every Suggest
+output auto-enters a pending approval queue; nothing is ever written into a
+real document except through `POST /api/approvals/{id}/decide`, and rejecting
+never touches a file (proven by an explicit test, not just inspection).
+Documents are versioned (never edited in place), with a visual
+tracked-changes style edit (strikethrough+red / underline+green — python-docx
+can't do Word's native revision XML).
+
+- `POST /api/approvals`, `GET /api/approvals?status=pending`,
+  `POST /api/approvals/{id}/decide` (the **only** entry point into the
+  Executor), `GET /api/documents/contract/{id}/versions`,
+  `GET /api/documents/version/{id}/download`
+- Frontend: `/approvals` queue — Accept / Reject / Edit, side-by-side
+  original/proposed text, download link once a version exists
+- New: `backend/app/agents/fix_and_learn/` (document_store, executor,
+  playbook_feedback), `approvals` / `document_versions` / `audit_log` /
+  `playbook_feedback` Postgres tables, `backend/storage/documents/` (gitignored)
+- Tests: 34 mocked pass (5 new); verified live against real Neo4j + real
+  Postgres (incl. a real FK-constraint catch SQLite couldn't)
+
 **Phase 2 complete and merged to `develop` — Suggest agent.** Retriever (vector search + OVERRIDES
 context + violated-rule text) → drafting → Contrarian → Judge → Negotiation
 Twin (all three stretch goals built, not skipped) → persisted to

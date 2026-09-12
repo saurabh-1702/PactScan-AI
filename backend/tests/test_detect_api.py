@@ -10,12 +10,13 @@ from fastapi.testclient import TestClient
 from app.agents.detect.graph_store import InMemoryGraphStore
 from app.agents.detect.seed_data import seed
 from app.api.detect import get_store
+from app.db.postgres_client import get_db
 from app.main import app
 from tests.conftest import _CANNED_DOCS, _FakeLLM
 
 
 @pytest.fixture
-def api_client(monkeypatch):
+def api_client(monkeypatch, db_session):
     shared = InMemoryGraphStore()
     seed(shared)
 
@@ -27,6 +28,11 @@ def api_client(monkeypatch):
         lambda p: _CANNED_DOCS[Path(p).name](),
     )
     app.dependency_overrides[get_store] = lambda: shared
+
+    def _override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = _override_get_db
     try:
         yield TestClient(app), shared
     finally:

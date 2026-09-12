@@ -16,6 +16,7 @@ __pycache__/
 htmlcov/
 backend/.llm_cache/
 backend/tests/fixtures/generated/
+backend/storage/
 
 # ---------------- Node / Next.js ----------------
 node_modules/

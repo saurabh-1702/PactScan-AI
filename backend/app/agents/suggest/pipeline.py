@@ -13,6 +13,7 @@ and returned; the human-approval write path is Phase 3.
 
 from __future__ import annotations
 
+import json
 import logging
 
 from sqlalchemy.orm import Session
@@ -22,7 +23,7 @@ from app.agents.suggest.adversarial_review import run_contrarian, run_judge
 from app.agents.suggest.draft_redline import draft_redline
 from app.agents.suggest.negotiation_twin import run_negotiation_twin
 from app.agents.suggest.retriever import retrieve_context
-from app.db.models import RedlineSuggestion
+from app.db.models import Approval, AuditLog, RedlineSuggestion
 from app.models.clause import ExtractedClause
 from app.models.redline import RetrievedContext, SuggestResult
 
@@ -111,6 +112,21 @@ async def _run_pipeline(
     db.add(row)
     db.commit()
     db.refresh(row)
+
+    # Phase 3: every successful Suggest output automatically enters the human
+    # approval queue as 'pending' — this is the only place an Approval row for
+    # a redline_suggestion is created outside the manual POST /api/approvals.
+    approval = Approval(redline_suggestion_id=row.id, status="pending")
+    db.add(approval)
+    db.flush()  # assigns approval.id (the Python-side default) before it's referenced below
+    db.add(
+        AuditLog(
+            event_type="approval_created",
+            entity_id=approval.id,
+            details=json.dumps({"redline_suggestion_id": row.id, "source": "suggest_pipeline"}),
+        )
+    )
+    db.commit()
 
     return SuggestResult(
         suggestion_id=row.id,

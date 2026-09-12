@@ -5,11 +5,15 @@ from __future__ import annotations
 import logging
 import uuid
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from app.agents.detect import graph_writer, ingest
 from app.agents.detect.detect_agent import run_detect
 from app.agents.detect.graph_store import DEMO_TENANT, GraphStore
 from app.models.clause import DetectReport
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 logger = logging.getLogger("pactscan.detect.pipeline")
 
@@ -20,7 +24,12 @@ async def ingest_and_detect(
     filename: str,
     tenant_id: str = DEMO_TENANT,
     contract_id: str | None = None,
+    db: "Session | None" = None,
 ) -> DetectReport:
+    """``db`` is optional (Phase 3) — when provided, the original upload (or a
+    synthesized .docx reconstruction, if it wasn't already a .docx) is
+    captured as document_versions version 1. Omitting it preserves exact
+    Phase 1/2 behaviour for existing callers/tests."""
     contract_id = contract_id or f"ct_{uuid.uuid4().hex[:12]}"
 
     parsed = ingest.parse_document(file_path)
@@ -29,6 +38,14 @@ async def ingest_and_detect(
         store, contract_id, filename, clauses, tenant_id=tenant_id
     )
     findings = await run_detect(store, contract_id, tenant_id=tenant_id)
+
+    if db is not None:
+        from app.agents.fix_and_learn.document_store import ensure_initial_version
+
+        stored_clauses = store.get_clauses_for_contract(contract_id, tenant_id=tenant_id)
+        ensure_initial_version(
+            db, tenant_id, contract_id, filename, Path(file_path).read_bytes(), stored_clauses
+        )
 
     return DetectReport(
         contract_id=contract_id,
