@@ -164,11 +164,17 @@ class GraphStore(abc.ABC):
     ) -> list[dict]:
         """Each dict: {clause_id, contract_id, clause_type, raw_text, page_number,
         similarity}. ``contract_id`` restricts the search to one contract
-        (Phase 4's single-document questions); ``None`` searches the whole tenant."""
+        (Phase 4's single-document questions), scored directly against just
+        that contract's clauses (no approximate global top-K involved);
+        ``None`` searches the whole tenant via the vector index."""
 
     @abc.abstractmethod
     def list_contracts(self, tenant_id: str = DEMO_TENANT) -> list[dict]:
-        """Every contract in the tenant. Each dict: {contract_id, filename}."""
+        """Every contract in the tenant, most-recently-uploaded first. Each
+        dict: {contract_id, filename}. Callers that pick "the" contract for a
+        given filename (e.g. Ask's name matching) rely on this ordering to
+        prefer the newest upload when the same filename was ingested more
+        than once."""
 
     @abc.abstractmethod
     def get_override_relationships(
@@ -346,11 +352,9 @@ class InMemoryGraphStore(GraphStore):
         return scored[:top_k]
 
     def list_contracts(self, tenant_id=DEMO_TENANT):
-        return [
-            {"contract_id": c["id"], "filename": c["filename"]}
-            for (t, _), c in self.contracts.items()
-            if t == tenant_id
-        ]
+        matches = [c for (t, _), c in self.contracts.items() if t == tenant_id]
+        matches.sort(key=lambda c: c["upload_date"], reverse=True)
+        return [{"contract_id": c["id"], "filename": c["filename"]} for c in matches]
 
     def get_override_relationships(self, clause_id, tenant_id=DEMO_TENANT):
         out: list[dict] = []
@@ -770,19 +774,45 @@ class Neo4jGraphStore(GraphStore):
     def vector_search_similar_clauses(
         self, embedding, tenant_id=DEMO_TENANT, top_k=5, exclude_clause_id=None, contract_id=None
     ):
+        # A single-document search only ever needs to rank ONE contract's own
+        # (small, bounded) clause set — over-fetching from the GLOBAL vector
+        # index and filtering afterward doesn't scale: once the tenant's total
+        # embedded-clause count grows well past the over-fetch window, this
+        # contract's clauses may simply not be among the globally-nearest
+        # neighbours at all, silently returning zero hits for a document that
+        # is, in fact, relevant. Score this contract's clauses directly
+        # instead — no index, no global top-K, so no starvation is possible.
+        if contract_id is not None:
+            rows = self._run(
+                """
+                MATCH (n:Clause {tenant_id: $tenant_id, contract_id: $contract_id})
+                WHERE n.embedding IS NOT NULL AND n.id <> coalesce($exclude, '')
+                RETURN n.id AS clause_id, n.contract_id AS contract_id,
+                       n.clause_type AS clause_type, n.raw_text AS raw_text,
+                       n.page_number AS page_number, n.embedding AS embedding
+                """,
+                tenant_id=tenant_id,
+                contract_id=contract_id,
+                exclude=exclude_clause_id,
+            )
+            scored = [
+                {**{k: v for k, v in r.items() if k != "embedding"}, "similarity": _cosine_similarity(embedding, r["embedding"])}
+                for r in rows
+            ]
+            scored.sort(key=lambda d: d["similarity"], reverse=True)
+            return scored[:top_k]
+
         self.ensure_vector_index()
-        # The vector index returns its top-K matches GLOBALLY, before the WHERE
-        # filter below narrows to this tenant/contract. Over-fetch so filtering
-        # doesn't silently starve the result set down to fewer than top_k (or
-        # zero, if none of the globally-nearest neighbours happen to be in
-        # scope) — then re-limit to top_k after filtering.
+        # Portfolio-wide search: the vector index returns its top-K matches
+        # globally before the WHERE filter below applies, so over-fetch to
+        # keep the filtered result close to top_k in the common case (this is
+        # an approximate mitigation, not a guarantee, for a tenant-wide scan).
         fetch_k = min(max(top_k * 5, 25), 200)
         rows = self._run(
             """
             CALL db.index.vector.queryNodes('clause_embeddings', $fetch_k, $embedding)
             YIELD node, score
             WHERE node.tenant_id = $tenant_id AND node.id <> coalesce($exclude, '')
-              AND ($contract_id IS NULL OR node.contract_id = $contract_id)
             RETURN node.id AS clause_id, node.contract_id AS contract_id,
                    node.clause_type AS clause_type, node.raw_text AS raw_text,
                    node.page_number AS page_number, score AS similarity
@@ -794,13 +824,14 @@ class Neo4jGraphStore(GraphStore):
             embedding=list(embedding),
             tenant_id=tenant_id,
             exclude=exclude_clause_id,
-            contract_id=contract_id,
         )
         return rows
 
     def list_contracts(self, tenant_id=DEMO_TENANT):
         return self._run(
-            "MATCH (c:Contract {tenant_id: $tenant_id}) RETURN c.id AS contract_id, c.filename AS filename",
+            "MATCH (c:Contract {tenant_id: $tenant_id}) "
+            "RETURN c.id AS contract_id, c.filename AS filename "
+            "ORDER BY c.upload_date DESC",
             tenant_id=tenant_id,
         )
 

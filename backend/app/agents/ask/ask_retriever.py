@@ -56,6 +56,9 @@ def find_contract_by_name(
         return None
     q_tokens = set(q.split()) - _GENERIC_NAME_TOKENS
 
+    # list_contracts() returns most-recently-uploaded first, and the `>`
+    # below keeps the first tied match — so when a tenant has uploaded the
+    # same filename more than once, this resolves to the newest one.
     best, best_score = None, 0.0
     for c in store.list_contracts(tenant_id=tenant_id):
         name = _normalize(Path(c["filename"]).stem)
