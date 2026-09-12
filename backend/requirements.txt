@@ -28,6 +28,13 @@ python-docx==1.1.2                # visual tracked-change-style .docx edits (no 
 # --- Ask agent (Phase 4) ---
 python-dateutil==2.9.0.post0      # parses relative time references ("since last week") in status questions
 
+# --- Auth / notifications (Phase 5) ---
+passlib==1.7.4                     # password hashing; unmaintained since 1.7.4, needs the bcrypt pin below
+bcrypt==4.0.1                      # bcrypt>=4.1 removed the `__about__` attribute passlib 1.7.4 reads at import;
+                                    # pin here rather than passlib's own [bcrypt] extra, which floats latest bcrypt
+python-jose[cryptography]==3.3.0   # JWT issue/verify
+resend==2.15.0                     # optional HIGH-severity email notifications; skipped gracefully if RESEND_API_KEY is unset
+
 # --- Test / fixtures ---
 pytest==9.1.1                     # prompt said 8.3.4; bumped with pytest-asyncio (below)
 pytest-asyncio==1.4.0            # prompt said 0.25.0; 0.25 spams asyncio-policy DeprecationWarnings on py3.14

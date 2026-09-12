@@ -24,10 +24,11 @@ from app.agents.fix_and_learn.executor import (
 )
 from app.agents.suggest.pipeline import suggest_from_finding
 from app.api.approvals import get_store as approvals_get_store
+from app.api.deps import get_current_user
 from app.db.models import Approval, AuditLog, DocumentVersion
 from app.db.postgres_client import get_db
 from app.main import app
-from tests.conftest import _CANNED_DOCS, _FakeLLM, _fake_embedding_vector
+from tests.conftest import _CANNED_DOCS, _FakeLLM, _fake_embedding_vector, default_current_user
 
 
 def _hash_file(path: str | Path) -> str:
@@ -124,6 +125,7 @@ def api_client(scenario):
 
     app.dependency_overrides[approvals_get_store] = lambda: store
     app.dependency_overrides[get_db] = _override_get_db
+    app.dependency_overrides[get_current_user] = default_current_user
     try:
         yield TestClient(app), scenario
     finally:

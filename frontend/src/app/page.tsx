@@ -1,24 +1,16 @@
-import Link from "next/link";
+"use client";
 
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+
+/** The app's real home is the dashboard — AuthGate has already confirmed a
+ * valid session by the time this renders, so just forward there. */
 export default function Home() {
-  return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-4 p-8 text-center">
-      <h1 className="text-2xl font-semibold tracking-tight">PactScan AI</h1>
-      <p className="max-w-md text-sm text-neutral-500">
-        Agentic GraphRAG contract compliance for vendor DPAs — DPDP (primary) +
-        GDPR (secondary).
-      </p>
-      <nav className="mt-2 flex gap-4 text-sm font-medium">
-        <Link href="/detect" className="text-sky-700 underline">
-          Detect &amp; Suggest
-        </Link>
-        <Link href="/approvals" className="text-sky-700 underline">
-          Approval Queue
-        </Link>
-        <Link href="/ask" className="text-sky-700 underline">
-          Ask
-        </Link>
-      </nav>
-    </main>
-  );
+  const router = useRouter();
+
+  useEffect(() => {
+    router.replace("/dashboard");
+  }, [router]);
+
+  return null;
 }

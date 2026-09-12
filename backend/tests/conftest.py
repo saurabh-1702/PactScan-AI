@@ -12,9 +12,10 @@ from pathlib import Path
 
 import pytest
 
-from app.agents.detect.graph_store import InMemoryGraphStore
+from app.agents.detect.graph_store import DEMO_TENANT, InMemoryGraphStore
 from app.agents.detect.ingest import ParsedDocument, ParsedPage
 from app.agents.detect.seed_data import seed
+from app.api.deps import CurrentUser
 from app.models.clause import (
     BatchNLIItem,
     BatchNLIResult,
@@ -535,6 +536,17 @@ def fake_parse(monkeypatch):
 
     monkeypatch.setattr("app.agents.detect.ingest.parse_document", _parse)
     return _parse
+
+
+# --------------------------------------------------------------------------- #
+# Auth (Phase 5) — API tests that exercise endpoint wiring rather than
+# auth/role-gating itself all default to this admin user under DEMO_TENANT,
+# matching the tenant_id the rest of these fixtures build data under.
+# test_auth_and_dashboard.py overrides get_current_user explicitly per-test
+# instead, to actually exercise 401/403 paths.
+# --------------------------------------------------------------------------- #
+def default_current_user() -> CurrentUser:
+    return CurrentUser(user_id="usr_test_admin", tenant_id=DEMO_TENANT, role="admin")
 
 
 @pytest.fixture

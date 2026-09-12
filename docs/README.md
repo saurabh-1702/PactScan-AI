@@ -13,6 +13,46 @@ This folder holds the project specification and the phase-by-phase build plan.
 
 ## Current status
 
+**Phase 5 built — Login, role-based dashboard, real-time notifications.** Real
+email/password auth (bcrypt + JWT, no SSO — a deliberate simplification per
+the phase prompt) replaces the hardcoded `tenant_id = "demo_tenant"` used
+throughout Phases 1-4; every existing endpoint now resolves the real tenant
+and role from the caller's JWT. `POST /api/approvals/{id}/decide` is gated to
+`reviewer`/`admin` roles only. A dashboard visualizes data Phases 1-3 already
+computed (nothing new is calculated) — severity breakdown, approvals-by-status,
+and a findings pipeline derived by joining Neo4j findings with Postgres
+suggestions/approvals. New findings fire an in-app notification, and HIGH
+severity ones additionally attempt an email via Resend (optional — degrades
+gracefully with no key configured).
+
+- **⚠️ One-time action required before running this phase**: Phases 2-4 never
+  gave `redline_suggestions`/`document_versions` a `tenant_id` column, and
+  there's still no migration framework, so this is a breaking schema change
+  for any existing dev Postgres volume. Reset it once:
+  ```
+  cd infra
+  docker compose down -v
+  docker compose up -d
+  ```
+- **Demo accounts** (seeded automatically at backend startup, under
+  `tenant_id = "demo_tenant"`): `enduser@demo.pactscan.ai` (role `end_user`)
+  and `reviewer@demo.pactscan.ai` (role `reviewer`), both with password
+  `PactScanDemo123!`. Register additional accounts via `POST /api/auth/register`.
+- `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/notifications`,
+  `POST /api/notifications/{id}/mark-read`, `GET /api/dashboard/overview`,
+  `GET /api/dashboard/findings-pipeline`
+- Frontend: `/login`, `/dashboard` (role-aware — reviewers/admins additionally
+  see a Pending Approvals panel), a shared header with nav + a polling
+  notification bell (replacing each page's own inline nav links), and a
+  client-side route guard redirecting to `/login` without a valid JWT
+- New: `backend/app/core/security.py` (hashing + JWT), `backend/app/api/deps.py`
+  (`get_current_user`, `require_role`), `backend/app/agents/notifications/`,
+  `tenants` / `users` / `notifications` Postgres tables, `tenant_id` added to
+  `redline_suggestions` and `document_versions`
+- Tests: 52 mocked pass (5 new, incl. the tenant-isolation exit-criteria test
+  with two seeded tenants); not yet run live or manually tested — pending
+  before merge to `develop`
+
 **Phase 4 complete and merged to `develop` — Ask agent (chatbot, contract Q&A, compliance-status Q&A, general legal-tech Q&A, edit-instruction handoff, chat history).** Scope
 expanded beyond the literal phase prompt at the user's request: two extra
 routing categories (`COMPLIANCE_STATUS_QUESTION`, `GENERAL_LEGAL_TECH_QUESTION`)

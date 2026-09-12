@@ -15,9 +15,10 @@ from app.agents.detect.graph_store import InMemoryGraphStore
 from app.agents.detect.pipeline import ingest_and_detect
 from app.agents.detect.seed_data import seed
 from app.api.ask import get_store as ask_get_store
+from app.api.deps import get_current_user
 from app.db.postgres_client import get_db
 from app.main import app
-from tests.conftest import _CANNED_DOCS, _FakeLLM, _fake_embedding_vector
+from tests.conftest import _CANNED_DOCS, _FakeLLM, _fake_embedding_vector, default_current_user
 
 
 @pytest.fixture
@@ -59,6 +60,7 @@ def api_client(populated_store_and_db):
 
     app.dependency_overrides[ask_get_store] = lambda: store
     app.dependency_overrides[get_db] = _override_get_db
+    app.dependency_overrides[get_current_user] = default_current_user
     try:
         yield TestClient(app), store, db
     finally:

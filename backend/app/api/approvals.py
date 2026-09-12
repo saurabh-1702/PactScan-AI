@@ -28,6 +28,7 @@ from app.agents.fix_and_learn.executor import (
     apply_approved_redline,
 )
 from app.agents.fix_and_learn.playbook_feedback import record_accepted_redline
+from app.api.deps import CurrentUser, get_current_user, require_role
 from app.db.models import Approval, AuditLog, RedlineSuggestion
 from app.db.postgres_client import get_db
 from app.models.approval import ApprovalOut, CreateApprovalRequest, DecideRequest
@@ -41,8 +42,10 @@ def get_store() -> GraphStore:
     return get_graph_store()
 
 
-def _to_out(approval: Approval, suggestion: RedlineSuggestion, store: GraphStore) -> ApprovalOut:
-    clause = store.get_clause_by_id(suggestion.clause_id)
+def _to_out(
+    approval: Approval, suggestion: RedlineSuggestion, store: GraphStore, tenant_id: str
+) -> ApprovalOut:
+    clause = store.get_clause_by_id(suggestion.clause_id, tenant_id=tenant_id)
     return ApprovalOut(
         id=approval.id,
         redline_suggestion_id=approval.redline_suggestion_id,
@@ -66,9 +69,10 @@ def create_approval(
     body: CreateApprovalRequest,
     db: Session = Depends(get_db),
     store: GraphStore = Depends(get_store),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> ApprovalOut:
     suggestion = db.get(RedlineSuggestion, body.redline_suggestion_id)
-    if suggestion is None:
+    if suggestion is None or suggestion.tenant_id != current_user.tenant_id:
         raise HTTPException(404, f"redline_suggestion {body.redline_suggestion_id!r} not found")
 
     approval = Approval(redline_suggestion_id=suggestion.id, status="pending")
@@ -83,7 +87,7 @@ def create_approval(
     )
     db.commit()
     db.refresh(approval)
-    return _to_out(approval, suggestion, store)
+    return _to_out(approval, suggestion, store, current_user.tenant_id)
 
 
 @router.get("", response_model=list[ApprovalOut])
@@ -91,8 +95,13 @@ def list_approvals(
     status: str | None = Query(default=None),
     db: Session = Depends(get_db),
     store: GraphStore = Depends(get_store),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> list[ApprovalOut]:
-    q = db.query(Approval)
+    q = (
+        db.query(Approval)
+        .join(RedlineSuggestion, Approval.redline_suggestion_id == RedlineSuggestion.id)
+        .filter(RedlineSuggestion.tenant_id == current_user.tenant_id)
+    )
     if status:
         q = q.filter(Approval.status == status)
     rows = q.order_by(Approval.created_at).all()
@@ -102,7 +111,7 @@ def list_approvals(
         suggestion = db.get(RedlineSuggestion, approval.redline_suggestion_id)
         if suggestion is None:
             continue  # orphaned row; shouldn't happen, skip defensively
-        out.append(_to_out(approval, suggestion, store))
+        out.append(_to_out(approval, suggestion, store, current_user.tenant_id))
     return out
 
 
@@ -112,6 +121,7 @@ def decide_approval(
     body: DecideRequest,
     db: Session = Depends(get_db),
     store: GraphStore = Depends(get_store),
+    current_user: CurrentUser = Depends(require_role(["reviewer", "admin"])),
 ) -> ApprovalOut:
     # ---------------------------------------------------------------------
     # THIS IS THE ONLY ENTRY POINT INTO THE EXECUTOR.
@@ -120,12 +130,12 @@ def decide_approval(
     approval = db.get(Approval, approval_id)
     if approval is None:
         raise HTTPException(404, f"approval {approval_id!r} not found")
-    if approval.status != "pending":
-        raise HTTPException(409, f"approval {approval_id!r} was already decided ({approval.status})")
 
     suggestion = db.get(RedlineSuggestion, approval.redline_suggestion_id)
-    if suggestion is None:
-        raise HTTPException(404, f"redline_suggestion {approval.redline_suggestion_id!r} not found")
+    if suggestion is None or suggestion.tenant_id != current_user.tenant_id:
+        raise HTTPException(404, f"approval {approval_id!r} not found")
+    if approval.status != "pending":
+        raise HTTPException(409, f"approval {approval_id!r} was already decided ({approval.status})")
 
     approval.status = body.decision
     approval.reviewer_note = body.note
@@ -144,11 +154,11 @@ def decide_approval(
     db.refresh(approval)
 
     if body.decision == "rejected":
-        return _to_out(approval, suggestion, store)
+        return _to_out(approval, suggestion, store, current_user.tenant_id)
 
     # approved -> call the Executor (and only the Executor, and only here)
     try:
-        apply_approved_redline(db, store, approval.id)
+        apply_approved_redline(db, store, approval.id, tenant_id=current_user.tenant_id)
     except ExecutorNotAuthorizedError as exc:
         # should be unreachable given the pending-check above; fail loudly if it ever happens
         logger.error("Executor authorization guard tripped unexpectedly: %s", exc)
@@ -158,7 +168,7 @@ def decide_approval(
     except (ValueError, RuntimeError) as exc:
         raise HTTPException(422, str(exc)) from exc
 
-    clause = store.get_clause_by_id(suggestion.clause_id)
+    clause = store.get_clause_by_id(suggestion.clause_id, tenant_id=current_user.tenant_id)
     if clause is not None:
         record_accepted_redline(
             db,
@@ -167,4 +177,4 @@ def decide_approval(
         )
 
     db.refresh(approval)
-    return _to_out(approval, suggestion, store)
+    return _to_out(approval, suggestion, store, current_user.tenant_id)

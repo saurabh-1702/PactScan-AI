@@ -12,9 +12,10 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.agents.detect.graph_store import DEMO_TENANT
 from app.db.postgres_client import Base
 
 
@@ -22,6 +23,12 @@ class RedlineSuggestion(Base):
     __tablename__ = "redline_suggestions"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: f"sg_{uuid.uuid4().hex[:16]}")
+    # Added Phase 5 — Phases 2-4 had no Postgres-side tenant column at all
+    # (only the Neo4j graph and Phase 4's ChatSession/ChatMessage did), which
+    # made real tenant-isolated queries (dashboard, approval listing)
+    # impossible. Defaults to DEMO_TENANT so any pre-Phase-5 row a fresh
+    # create_all() happens to see still has a valid value.
+    tenant_id: Mapped[str] = mapped_column(String(40), index=True, default=DEMO_TENANT)
     finding_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     contract_id: Mapped[str] = mapped_column(String(40), index=True)
     clause_id: Mapped[str] = mapped_column(String(40), index=True)
@@ -71,6 +78,10 @@ class DocumentVersion(Base):
     __tablename__ = "document_versions"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: f"dv_{uuid.uuid4().hex[:16]}")
+    # Added Phase 5 alongside RedlineSuggestion.tenant_id, for the same reason:
+    # /api/documents/* had no way to confirm a requester's tenant actually owns
+    # the document being listed/downloaded.
+    tenant_id: Mapped[str] = mapped_column(String(40), index=True, default=DEMO_TENANT)
     contract_id: Mapped[str] = mapped_column(String(40), index=True)
     version_number: Mapped[int] = mapped_column(Integer)
     file_path: Mapped[str] = mapped_column(String(500))
@@ -106,6 +117,52 @@ class PlaybookFeedback(Base):
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: f"pf_{uuid.uuid4().hex[:16]}")
     clause_type: Mapped[str] = mapped_column(String(60))
     accepted_text: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class Tenant(Base):
+    """Phase 5: real multi-tenant identity, replacing the hardcoded
+    DEMO_TENANT string every prior phase used directly. One row
+    (id=DEMO_TENANT) is seeded at startup so existing Neo4j/Postgres data
+    keeps resolving to a real tenant."""
+
+    __tablename__ = "tenants"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: f"usr_{uuid.uuid4().hex[:16]}")
+    tenant_id: Mapped[str] = mapped_column(String(40), ForeignKey("tenants.id"), index=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    hashed_password: Mapped[str] = mapped_column(String(255))
+    role: Mapped[str] = mapped_column(String(20))  # "end_user" | "reviewer" | "admin"
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class Notification(Base):
+    """Fired once per new finding (see app/agents/notifications/notify.py),
+    right after Detect writes it to the graph. In-app only by default;
+    HIGH severity additionally attempts a best-effort email via Resend."""
+
+    __tablename__ = "notifications"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: f"ntf_{uuid.uuid4().hex[:16]}")
+    tenant_id: Mapped[str] = mapped_column(String(40), index=True)
+    finding_id: Mapped[str] = mapped_column(String(40), index=True)
+    severity: Mapped[str] = mapped_column(String(10))
+    message: Mapped[str] = mapped_column(Text)
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

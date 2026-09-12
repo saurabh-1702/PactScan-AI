@@ -385,3 +385,89 @@ session — this is correct, by-design behaviour for a portfolio-wide Ask
 agent (Section 4.5 of the project spec: "every contract a company has ever
 uploaded... regardless of when"), not a bug, but it does mean old manual-test
 contracts will show up in portfolio answers unless deliberately wiped.
+
+---
+
+## Phase 5
+
+### A Postgres schema gap the phase prompt didn't call out
+
+Phases 2-4 never gave `redline_suggestions`, `approvals`, or `document_versions`
+a `tenant_id` column at all — only the Neo4j graph and Phase 4's
+`chat_sessions`/`chat_messages` were tenant-scoped. The phase's own exit
+criteria ("dashboard endpoints only return data belonging to the requesting
+user's tenant") was untestable for approvals/suggestions without one. Added
+`tenant_id` to `RedlineSuggestion` (already passed into the Suggest pipeline,
+just never persisted) and to `DocumentVersion` (for `/api/documents/*`, given
+this build's decision to make document access tenant-isolated, not just
+login-gated). `Approval` stays un-denormalized — it's scoped via a join to
+`RedlineSuggestion.tenant_id`, which is simpler than keeping a second copy in
+sync.
+
+**Because there's still no migration framework**, this is a genuinely
+breaking schema change for anyone with an existing dev Postgres volume:
+`Base.metadata.create_all()` only creates missing tables, it never alters an
+existing one to add a column. Anyone pulling this phase must reset their dev
+Postgres volume (`docker compose down -v` under `infra/`) before starting the
+backend — see docs/README.md's Phase 5 section for the exact command. This is
+a one-time, demo-data-only reset; there's no real user data yet to preserve.
+
+### passlib + bcrypt: the exact same class of pin problem as pydantic in Phase 0
+
+**The bug:** `passlib==1.7.4` (its last release; effectively unmaintained)
+reads `bcrypt.__about__.__version__` at import time to detect the backend
+version. `bcrypt>=4.1` removed that attribute entirely, so the very first
+`CryptContext(schemes=["bcrypt"]).hash(...)` call raised
+`AttributeError: module 'bcrypt' has no attribute '__about__'`, masked behind
+a confusing second exception ("password cannot be longer than 72 bytes")
+because passlib's error-recovery path swallows the real cause.
+**The fix, applied:** pin `bcrypt==4.0.1` (last version with `__about__`)
+directly in `requirements.txt`, rather than relying on `passlib[bcrypt]`'s
+extra, which floats to the latest bcrypt and re-triggers this. **Same lesson
+as Phase 0's pydantic/psycopg2 pins: an unmaintained package's stated
+dependency range can't be trusted against a dependency that's still receiving
+releases — pin the transitive dependency explicitly once this happens.**
+
+### JWT bearer auth breaks plain `<a href>` downloads
+
+**The bug:** `/api/documents/version/{id}/download` now requires
+`Authorization: Bearer <token>`, but the existing frontend used a plain
+`<a href={url}>` for the download link — a browser navigation triggered by
+clicking a link never attaches a custom header, so every download would have
+401'd once auth was retrofitted onto that endpoint.
+**The fix, applied (`frontend/src/lib/api.ts::downloadDocumentVersion`):**
+fetch the file with the auth header attached (like every other API call),
+turn the response into a `Blob`, hand the browser a local `URL.createObjectURL`
+link, click it programmatically, then revoke the object URL. `approvals/page.tsx`
+now calls this from an `onClick` handler instead of rendering an `<a href>`.
+**Any future authenticated file download must use this pattern, not a plain
+anchor tag — bearer-token auth and simple browser navigation don't mix.**
+
+### Client-side route protection, not server-side
+
+`AuthGate` (in the root layout) redirects to `/login` when no valid,
+unexpired JWT is found in `localStorage` — a client-side check, matching this
+build's demo scope. It is not a security boundary: the actual security
+boundary is the backend re-verifying the JWT signature on every request
+(`get_current_user` / `require_role`), and that boundary is real regardless
+of what the frontend does. A production deployment would add server-side
+route protection (e.g. Next.js middleware checking a cookie) as defense in
+depth, but a determined user editing `localStorage` in devtools can only ever
+make the *frontend* behave oddly — they still can't get the API to accept a
+token they didn't legitimately obtain from `/api/auth/login`.
+
+### Email notifications (Resend) are wired but need a real API key to activate
+
+`app/agents/notifications/notify.py` attempts an email to every reviewer/admin
+in the tenant when a HIGH-severity finding is created, but only if
+`RESEND_API_KEY` is set in `backend\.env` — left blank (the default), it
+degrades to in-app-only notifications, same graceful-skip pattern as every
+other optional third-party key in this project. Without a verified sending
+domain, Resend's sandbox sender (`onboarding@resend.dev`) can only deliver to
+the email address the Resend account itself was created with — fine for this
+project's single demo reviewer account, not for multiple real recipients.
+**Not covered by an automated live test** — sending a real third-party email
+during any pytest run (mocked or live) would be a genuine testing-discipline
+violation, so `test_high_severity_finding_creates_notification_row` forces
+`settings.resend_api_key = ""` via monkeypatch regardless of what `.env`
+holds. Email delivery itself is a manual verification step only.

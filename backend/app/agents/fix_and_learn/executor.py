@@ -133,6 +133,7 @@ def apply_approved_redline(
     doc.save(str(new_path))
 
     new_version = DocumentVersion(
+        tenant_id=tenant_id,
         contract_id=suggestion.contract_id,
         version_number=new_version_number,
         file_path=str(new_path),

@@ -87,6 +87,21 @@ class Settings(BaseSettings):
     ask_similarity_threshold: float = 0.35
     ask_top_k: int = 6
 
+    # --- Auth (Phase 5) ---
+    # Dev-only default — MUST be overridden in backend\.env for anything beyond
+    # local demo use, since anyone with this value can forge a valid JWT.
+    jwt_secret_key: str = "dev-only-insecure-secret-change-me"
+    jwt_algorithm: str = "HS256"
+    jwt_expiry_hours: int = 24
+
+    # --- Notifications (Phase 5) ---
+    # Optional: HIGH-severity findings additionally email every reviewer/admin
+    # in the tenant via Resend. Left blank, this degrades gracefully to
+    # in-app-only notifications (same "optional key -> graceful skip" pattern
+    # as LLAMA_CLOUD_API_KEY / GEMINI_API_KEYS elsewhere in this file).
+    resend_api_key: str = ""
+    notification_email_from: str = "onboarding@resend.dev"
+
     # --- App ---
     environment: str = "development"
 

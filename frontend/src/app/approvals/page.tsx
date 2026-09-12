@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   decideApproval,
-  documentDownloadUrl,
+  downloadDocumentVersion,
   getAllApprovals,
   getDocumentVersions,
   type Approval,
@@ -51,6 +51,14 @@ export default function ApprovalsPage() {
   function showToast(msg: string) {
     setToast(msg);
     setTimeout(() => setToast(null), 4000);
+  }
+
+  async function onDownload(versionId: string, contractId: string, versionNumber: number) {
+    try {
+      await downloadDocumentVersion(versionId, `${contractId}_v${versionNumber}.docx`);
+    } catch (err) {
+      showToast(`Download failed: ${err instanceof Error ? err.message : "unknown error"}`);
+    }
   }
 
   async function onDecide(a: Approval, decision: "approved" | "rejected", useEdit: boolean) {
@@ -210,12 +218,13 @@ export default function ApprovalsPage() {
                       )}
 
                       {latest && (
-                        <a
-                          href={documentDownloadUrl(latest.id)}
+                        <button
+                          type="button"
+                          onClick={() => onDownload(latest.id, a.contract_id, latest.version_number)}
                           className="ml-auto text-xs font-semibold text-sky-700 underline"
                         >
                           Download latest document (v{latest.version_number})
-                        </a>
+                        </button>
                       )}
                     </div>
                   </li>
@@ -251,12 +260,13 @@ export default function ApprovalsPage() {
                         {a.decided_at ? new Date(a.decided_at).toLocaleString() : "—"}
                       </span>
                       {a.status === "approved" && latest && (
-                        <a
-                          href={documentDownloadUrl(latest.id)}
+                        <button
+                          type="button"
+                          onClick={() => onDownload(latest.id, a.contract_id, latest.version_number)}
                           className="ml-auto text-xs font-semibold text-sky-700 underline"
                         >
                           Download document (v{latest.version_number})
-                        </a>
+                        </button>
                       )}
                     </div>
                     {a.reviewer_note && (

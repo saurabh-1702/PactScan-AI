@@ -13,10 +13,11 @@ from fastapi.testclient import TestClient
 from app.agents.detect.graph_store import InMemoryGraphStore
 from app.agents.detect.pipeline import ingest_and_detect
 from app.agents.detect.seed_data import seed
+from app.api.deps import get_current_user
 from app.api.suggest import get_store as suggest_get_store
 from app.db.postgres_client import get_db
 from app.main import app
-from tests.conftest import _CANNED_DOCS, _FakeLLM, _fake_embedding_vector
+from tests.conftest import _CANNED_DOCS, _FakeLLM, _fake_embedding_vector, default_current_user
 
 
 def _hash_file(path: Path) -> str:
@@ -60,6 +61,7 @@ def test_suggest_endpoints_never_modify_files(populated_store_and_db, fixture_pd
 
     app.dependency_overrides[suggest_get_store] = lambda: shared
     app.dependency_overrides[get_db] = _override_get_db
+    app.dependency_overrides[get_current_user] = default_current_user
 
     client = TestClient(app)
     try:
@@ -106,6 +108,7 @@ def test_suggest_from_finding_unknown_id_404(populated_store_and_db):
 
     app.dependency_overrides[suggest_get_store] = lambda: shared
     app.dependency_overrides[get_db] = _override_get_db
+    app.dependency_overrides[get_current_user] = default_current_user
     client = TestClient(app)
     try:
         resp = client.post("/api/suggest/from-finding/fnd_does_not_exist")

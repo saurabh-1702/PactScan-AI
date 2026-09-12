@@ -55,6 +55,19 @@ async def lifespan(_app: FastAPI):
     except Exception as exc:  # noqa: BLE001 - non-fatal: degrades gracefully like Neo4j seeding
         logger.warning("PostgreSQL table creation skipped: %s", exc)
 
+    # --- Seed the demo tenant + demo login accounts (idempotent) ---
+    try:
+        from app.db.postgres_client import SessionLocal
+        from app.db.seed_auth import seed_demo_tenant_and_users
+
+        db = SessionLocal()
+        try:
+            seed_demo_tenant_and_users(db)
+        finally:
+            db.close()
+    except Exception as exc:  # noqa: BLE001 - non-fatal, same pattern as the seeding above
+        logger.warning("Demo tenant/user seeding skipped: %s", exc)
+
     yield
 
     neo4j_client.close_driver()
@@ -73,15 +86,21 @@ app.add_middleware(
 
 from app.api.approvals import router as approvals_router  # noqa: E402
 from app.api.ask import router as ask_router  # noqa: E402
+from app.api.auth import router as auth_router  # noqa: E402
+from app.api.dashboard import router as dashboard_router  # noqa: E402
 from app.api.detect import router as detect_router  # noqa: E402
 from app.api.documents import router as documents_router  # noqa: E402
+from app.api.notifications import router as notifications_router  # noqa: E402
 from app.api.suggest import router as suggest_router  # noqa: E402
 
+app.include_router(auth_router)
 app.include_router(detect_router)
 app.include_router(suggest_router)
 app.include_router(approvals_router)
 app.include_router(documents_router)
 app.include_router(ask_router)
+app.include_router(notifications_router)
+app.include_router(dashboard_router)
 
 
 @app.get("/health")

@@ -41,11 +41,13 @@ async def ingest_and_detect(
 
     if db is not None:
         from app.agents.fix_and_learn.document_store import ensure_initial_version
+        from app.agents.notifications.notify import notify_new_findings
 
         stored_clauses = store.get_clauses_for_contract(contract_id, tenant_id=tenant_id)
         ensure_initial_version(
             db, tenant_id, contract_id, filename, Path(file_path).read_bytes(), stored_clauses
         )
+        notify_new_findings(db, tenant_id, filename, findings)
 
     return DetectReport(
         contract_id=contract_id,

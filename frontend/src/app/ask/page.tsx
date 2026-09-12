@@ -123,14 +123,9 @@ export default function AskPage() {
   }
 
   return (
-    <main className="mx-auto flex h-screen max-w-5xl">
+    <main className="mx-auto flex min-h-0 flex-1 max-w-5xl">
       <aside className="w-56 shrink-0 border-r border-neutral-200 p-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold">Conversations</h2>
-          <Link href="/detect" className="text-xs text-sky-700 underline">
-            Detect
-          </Link>
-        </div>
+        <h2 className="text-sm font-semibold">Conversations</h2>
         <button
           type="button"
           onClick={startNewChat}

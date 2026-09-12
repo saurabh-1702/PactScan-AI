@@ -107,6 +107,14 @@ class GraphStore(abc.ABC):
     ) -> list[Finding]: ...
 
     @abc.abstractmethod
+    def get_all_findings(self, tenant_id: str = DEMO_TENANT) -> list[dict]:
+        """Every finding across every contract in the tenant (Phase 5's
+        dashboard). Each dict: {finding_id, contract_id, clause_id, severity,
+        rule_or_regulation_violated}. Unlike ``get_findings``, not scoped to
+        one contract, and returns plain dicts (with contract_id) rather than
+        ``Finding`` — a dashboard aggregate, not a Detect report."""
+
+    @abc.abstractmethod
     def write_compliance_edges(
         self,
         contract_id: str,
@@ -292,6 +300,23 @@ class InMemoryGraphStore(GraphStore):
 
     def get_findings(self, contract_id, tenant_id=DEMO_TENANT):
         return list(self.findings.get((tenant_id, contract_id), []))
+
+    def get_all_findings(self, tenant_id=DEMO_TENANT):
+        out: list[dict] = []
+        for (t, contract_id), findings in self.findings.items():
+            if t != tenant_id:
+                continue
+            for f in findings:
+                out.append(
+                    {
+                        "finding_id": f.finding_id,
+                        "contract_id": contract_id,
+                        "clause_id": f.clause_id,
+                        "severity": f.severity.value,
+                        "rule_or_regulation_violated": f.rule_or_regulation_violated,
+                    }
+                )
+        return out
 
     def write_compliance_edges(self, contract_id, edges, tenant_id=DEMO_TENANT):
         self.compliance_edges[(tenant_id, contract_id)] = list(edges)
@@ -647,6 +672,16 @@ class Neo4jGraphStore(GraphStore):
             r["override_chain"] = r.get("override_chain") or []
             out.append(Finding.model_validate(r))
         return out
+
+    def get_all_findings(self, tenant_id=DEMO_TENANT):
+        return self._run(
+            """
+            MATCH (c:Contract {tenant_id: $tenant_id})-[:HAS_FINDING]->(f:Finding)
+            RETURN f.id AS finding_id, c.id AS contract_id, f.clause_id AS clause_id,
+                   f.severity AS severity, f.rule_or_regulation_violated AS rule_or_regulation_violated
+            """,
+            tenant_id=tenant_id,
+        )
 
     def write_compliance_edges(self, contract_id, edges, tenant_id=DEMO_TENANT):
         for clause_id, rel_type, target_id in edges:

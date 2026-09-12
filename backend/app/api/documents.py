@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
+from app.api.deps import CurrentUser, get_current_user
 from app.db.models import DocumentVersion
 from app.db.postgres_client import get_db
 from app.models.approval import DocumentVersionOut
@@ -20,10 +21,17 @@ router = APIRouter(prefix="/api/documents", tags=["documents"])
 
 
 @router.get("/contract/{contract_id}/versions", response_model=list[DocumentVersionOut])
-def list_versions(contract_id: str, db: Session = Depends(get_db)) -> list[DocumentVersionOut]:
+def list_versions(
+    contract_id: str,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
+) -> list[DocumentVersionOut]:
     rows = (
         db.query(DocumentVersion)
-        .filter(DocumentVersion.contract_id == contract_id)
+        .filter(
+            DocumentVersion.contract_id == contract_id,
+            DocumentVersion.tenant_id == current_user.tenant_id,
+        )
         .order_by(DocumentVersion.version_number)
         .all()
     )
@@ -31,9 +39,14 @@ def list_versions(contract_id: str, db: Session = Depends(get_db)) -> list[Docum
 
 
 @router.get("/version/{version_id}/download")
-def download_version(version_id: str, db: Session = Depends(get_db)) -> FileResponse:
+def download_version(
+    version_id: str,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
+) -> FileResponse:
     row = db.get(DocumentVersion, version_id)
-    if row is None:
+    # 404, not 403, on a tenant mismatch — don't reveal that the id exists at all
+    if row is None or row.tenant_id != current_user.tenant_id:
         raise HTTPException(404, f"document version {version_id!r} not found")
     path = Path(row.file_path)
     if not path.exists():
