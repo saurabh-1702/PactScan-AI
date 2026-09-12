@@ -78,6 +78,15 @@ class Settings(BaseSettings):
     llama_cloud_api_key: str = ""
     llama_parse_tier: str = "fast"  # fast | cost_effective | agentic | agentic_plus
 
+    # --- Ask agent (Phase 4) ---
+    # Cosine-similarity floor below which a content question abstains instead
+    # of answering from weak/irrelevant matches. Not verified against a live
+    # key at build time (like Phase 2's embedding dimension) — tune in .env if
+    # live testing shows it's too strict (over-abstaining) or too loose
+    # (answering from irrelevant clauses).
+    ask_similarity_threshold: float = 0.35
+    ask_top_k: int = 6
+
     # --- App ---
     environment: str = "development"
 

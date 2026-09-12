@@ -25,6 +25,9 @@ llama-cloud==2.16.0              # new package (client.parsing.parse); replaces 
 # --- Document writing (Phase 3) ---
 python-docx==1.1.2                # visual tracked-change-style .docx edits (no native Word revision XML)
 
+# --- Ask agent (Phase 4) ---
+python-dateutil==2.9.0.post0      # parses relative time references ("since last week") in status questions
+
 # --- Test / fixtures ---
 pytest==9.1.1                     # prompt said 8.3.4; bumped with pytest-asyncio (below)
 pytest-asyncio==1.4.0            # prompt said 0.25.0; 0.25 spams asyncio-policy DeprecationWarnings on py3.14

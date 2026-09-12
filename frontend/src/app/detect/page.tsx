@@ -65,9 +65,14 @@ export default function DetectPage() {
         <h1 className="text-2xl font-semibold tracking-tight">
           PactScan AI — Detect
         </h1>
-        <Link href="/approvals" className="text-sm font-medium text-sky-700 underline">
-          Approval Queue →
-        </Link>
+        <div className="flex gap-3">
+          <Link href="/ask" className="text-sm font-medium text-sky-700 underline">
+            Ask →
+          </Link>
+          <Link href="/approvals" className="text-sm font-medium text-sky-700 underline">
+            Approval Queue →
+          </Link>
+        </div>
       </div>
       <p className="mt-1 text-sm text-neutral-500">
         Upload a vendor DPA / MSA. Detect parses it, maps it into the knowledge
