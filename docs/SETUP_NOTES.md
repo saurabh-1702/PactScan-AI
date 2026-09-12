@@ -506,3 +506,21 @@ from the JWT, since Ask's chat sessions are tenant-wide, not per-user
 a real `429` with a `Retry-After` header from the REST endpoints; from Ask,
 a new `AskResponseType.RATE_LIMITED` structured response, consistent with
 Ask never letting an exception reach the API layer for an expected outcome.
+
+### Chat sessions were tenant-wide, not per-user — found by manual testing
+
+**The bug (found by the user during Phase 5 manual testing):** logging in as
+the reviewer account could see and replay the end_user account's Ask
+conversations, and vice versa. `ChatSession` (Phase 4) only ever had
+`tenant_id` — Phase 4's own docstring even flagged this ("not yet per-user —
+Phase 5 adds login/roles, at which point this gains a `user_id` column"),
+but the column never actually got added when Phase 5 was first built.
+**The fix, applied:** added `ChatSession.user_id` (nullable, so a pre-Phase-5
+row surviving a schema reset doesn't violate a constraint), threaded
+`user_id` through `handle_ask`/`_get_or_create_session` (reusing the same
+parameter already added for per-user rate limiting), and scoped every
+session query — `GET /api/ask/sessions`, `GET /api/ask/sessions/{id}/messages`,
+and reusing an existing `session_id` on a new `POST /api/ask` — by
+`(tenant_id, user_id)` together, not tenant alone. A `session_id` that exists
+but belongs to someone else now 404s rather than being silently replayed or
+silently hijacked into a new conversation.

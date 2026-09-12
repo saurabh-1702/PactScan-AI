@@ -169,13 +169,17 @@ class Notification(Base):
 
 
 class ChatSession(Base):
-    """One Ask-agent conversation. Tenant-wide, not yet per-user — Phase 5
-    adds login/roles, at which point this gains a user_id column."""
+    """One Ask-agent conversation, scoped to the user who started it (Phase 5
+    — Phase 4 only had tenant_id, since login/roles didn't exist yet).
+    Nullable only so a pre-Phase-5 row surviving a schema reset doesn't
+    violate a NOT NULL constraint; every row created from here on always
+    sets it."""
 
     __tablename__ = "chat_sessions"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: f"cs_{uuid.uuid4().hex[:16]}")
     tenant_id: Mapped[str] = mapped_column(String(40), index=True)
+    user_id: Mapped[str | None] = mapped_column(String(40), index=True, nullable=True)
     title: Mapped[str] = mapped_column(String(200), default="New conversation")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)

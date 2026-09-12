@@ -29,6 +29,14 @@ from app.models.ask import AskResponse, AskResponseType, AskScope
 
 logger = logging.getLogger("pactscan.ask.pipeline")
 
+
+class ChatSessionAccessError(Exception):
+    """Raised when a caller's session_id exists but belongs to someone else —
+    surfaced as a 404 at the API layer (same "don't reveal existence" pattern
+    used for cross-tenant document access), not a silent fallback to a new
+    session."""
+
+
 _OUT_OF_SCOPE_MESSAGE = (
     "I can only help with questions about your contract portfolio, its compliance "
     "status, or general legal-tech / data-privacy-regulation topics. That's outside "
@@ -44,7 +52,7 @@ async def handle_ask(
     tenant_id: str = DEMO_TENANT,
     user_id: str | None = None,
 ) -> AskResponse:
-    session = _get_or_create_session(db, session_id, tenant_id, message)
+    session = _get_or_create_session(db, session_id, tenant_id, user_id, message)
     _record_message(db, session.id, role="user", content=message)
 
     classification = await classify_scope(message)
@@ -135,14 +143,18 @@ async def _route(
 
 
 def _get_or_create_session(
-    db: Session, session_id: str | None, tenant_id: str, first_message: str
+    db: Session, session_id: str | None, tenant_id: str, user_id: str | None, first_message: str
 ) -> ChatSession:
     if session_id:
         existing = db.get(ChatSession, session_id)
         if existing is not None:
+            if existing.tenant_id != tenant_id or existing.user_id != user_id:
+                raise ChatSessionAccessError(
+                    f"Chat session {session_id!r} does not belong to this user."
+                )
             return existing
     title = (first_message[:60] + "…") if len(first_message) > 60 else first_message
-    session = ChatSession(tenant_id=tenant_id, title=title or "New conversation")
+    session = ChatSession(tenant_id=tenant_id, user_id=user_id, title=title or "New conversation")
     db.add(session)
     db.commit()
     db.refresh(session)

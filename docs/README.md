@@ -59,8 +59,14 @@ gracefully with no key configured).
   container provisioned since Phase 0; fails open if Redis is unreachable.
   Exceeding it returns `429` with a `Retry-After` header from the REST
   endpoints, or an `AskResponseType.RATE_LIMITED` structured response from Ask.
-- Tests: 56 mocked pass (9 new, incl. the tenant-isolation exit-criteria test
-  with two seeded tenants, and rate-limit tests for both entry points); not
+- **Per-user chat isolation**: `ChatSession` gained `user_id` (Phase 4's own
+  docstring anticipated this, but it wasn't actually done until manual
+  testing caught two different users under the same tenant seeing each
+  other's Ask conversations). Every session query is now scoped by
+  `(tenant_id, user_id)`, and reusing someone else's `session_id` 404s.
+- Tests: 57 mocked pass (10 new, incl. the tenant-isolation exit-criteria test
+  with two seeded tenants, rate-limit tests for both entry points, and a
+  cross-user chat-session isolation regression test); not
   yet run live or manually tested — pending before merge to `develop`
 
 **Phase 4 complete and merged to `develop` — Ask agent (chatbot, contract Q&A, compliance-status Q&A, general legal-tech Q&A, edit-instruction handoff, chat history).** Scope
