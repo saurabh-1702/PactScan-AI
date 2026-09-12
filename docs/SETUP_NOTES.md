@@ -279,3 +279,18 @@ keys by default, so a cleanup script that deleted `approvals` before
 `document_versions` succeeded silently there but correctly failed with a real
 `ForeignKeyViolation` against Postgres — confirming the FK constraints are
 actually live in production, not just declared in the ORM.
+
+### Post-Phase-3 fix: decided approvals need to stay discoverable
+
+Manual testing surfaced a real UX gap: `/approvals` only fetched
+`status=pending`, so the moment an item was Accepted/Rejected it vanished
+from the page entirely — taking its "Download document" link with it. A
+user's instinct to "re-run the pipeline to get it back" actually created an
+unrelated new contract (every `/api/detect` upload mints a fresh
+`contract_id`), not a way back to the same document.
+
+Fixed by adding `getAllApprovals()` (no status filter — the backend endpoint
+already supported this) and splitting the `/approvals` page into a **Pending**
+section (actionable) and a **Decided** section (read-only, status badge,
+download link) below it. Locked in with
+`test_list_approvals_without_status_filter_returns_decided_items_too`.

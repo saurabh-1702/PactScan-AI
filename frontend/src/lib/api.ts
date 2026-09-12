@@ -120,6 +120,13 @@ export async function getPendingApprovals(): Promise<Approval[]> {
   return handleJson<Approval[]>(res);
 }
 
+/** All approvals regardless of status — needed so a decided item's document
+ * download link stays reachable after it leaves the pending queue. */
+export async function getAllApprovals(): Promise<Approval[]> {
+  const res = await fetch(`${API_BASE_URL}/api/approvals`);
+  return handleJson<Approval[]>(res);
+}
+
 export async function decideApproval(
   approvalId: string,
   decision: "approved" | "rejected",

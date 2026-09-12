@@ -209,6 +209,25 @@ def test_decided_docx_contains_both_original_and_new_text(api_client):
     assert suggestion.proposed_text.strip() in full_text
 
 
+def test_list_approvals_without_status_filter_returns_decided_items_too(api_client):
+    """A decided approval must remain discoverable (and its document
+    downloadable) via GET /api/approvals with no status filter — it must not
+    only exist in the 'pending' view, which loses it the moment it's decided."""
+    client, scenario = api_client
+    approval = scenario["approval"]
+
+    resp = client.post(f"/api/approvals/{approval.id}/decide", json={"decision": "approved"})
+    assert resp.status_code == 200, resp.text
+
+    pending = client.get("/api/approvals", params={"status": "pending"}).json()
+    assert approval.id not in [a["id"] for a in pending]
+
+    everything = client.get("/api/approvals").json()
+    matching = [a for a in everything if a["id"] == approval.id]
+    assert len(matching) == 1
+    assert matching[0]["status"] == "approved"
+
+
 def test_decide_approved_with_edited_text_writes_the_edit(api_client):
     client, scenario = api_client
     db, approval, contract_id = scenario["db"], scenario["approval"], scenario["contract_id"]
