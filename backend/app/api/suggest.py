@@ -22,7 +22,7 @@ from app.agents.suggest.pipeline import (
     suggest_from_finding,
     suggest_standalone,
 )
-from app.api.deps import CurrentUser, get_current_user
+from app.api.deps import CurrentUser, enforce_draft_rate_limit
 from app.db.postgres_client import get_db
 from app.models.redline import StandaloneSuggestRequest, SuggestResult
 
@@ -40,7 +40,7 @@ async def suggest_from_finding_endpoint(
     finding_id: str,
     store: GraphStore = Depends(get_store),
     db: Session = Depends(get_db),
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(enforce_draft_rate_limit),
 ) -> SuggestResult:
     try:
         return await suggest_from_finding(store, db, finding_id, tenant_id=current_user.tenant_id)
@@ -56,7 +56,7 @@ async def suggest_standalone_endpoint(
     body: StandaloneSuggestRequest,
     store: GraphStore = Depends(get_store),
     db: Session = Depends(get_db),
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(enforce_draft_rate_limit),
 ) -> SuggestResult:
     try:
         return await suggest_standalone(

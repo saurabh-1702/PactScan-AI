@@ -39,7 +39,12 @@ async def ask(
 ) -> AskResponse:
     try:
         return await handle_ask(
-            store, db, body.message, body.session_id, tenant_id=current_user.tenant_id
+            store,
+            db,
+            body.message,
+            body.session_id,
+            tenant_id=current_user.tenant_id,
+            user_id=current_user.user_id,
         )
     except RuntimeError as exc:
         logger.exception("Ask pipeline failed")

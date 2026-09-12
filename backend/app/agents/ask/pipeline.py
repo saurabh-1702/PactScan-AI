@@ -23,6 +23,7 @@ from app.agents.ask.general_legal import answer_general_question
 from app.agents.ask.scope_classifier import classify_scope
 from app.agents.ask.status_query import build_status_summary, generate_status_answer
 from app.agents.detect.graph_store import DEMO_TENANT, GraphStore
+from app.core.rate_limit import DraftRateLimitExceeded, check_draft_rate_limit
 from app.db.models import ChatMessage, ChatSession
 from app.models.ask import AskResponse, AskResponseType, AskScope
 
@@ -41,12 +42,13 @@ async def handle_ask(
     message: str,
     session_id: str | None,
     tenant_id: str = DEMO_TENANT,
+    user_id: str | None = None,
 ) -> AskResponse:
     session = _get_or_create_session(db, session_id, tenant_id, message)
     _record_message(db, session.id, role="user", content=message)
 
     classification = await classify_scope(message)
-    response = await _route(store, db, message, classification, tenant_id)
+    response = await _route(store, db, message, classification, tenant_id, user_id)
     response.session_id = session.id
 
     _record_message(
@@ -71,6 +73,7 @@ async def _route(
     message: str,
     classification,
     tenant_id: str,
+    user_id: str | None = None,
 ) -> AskResponse:
     if classification.scope == AskScope.OUT_OF_SCOPE:
         return AskResponse(session_id="", type=AskResponseType.OUT_OF_SCOPE, answer_text=_OUT_OF_SCOPE_MESSAGE)
@@ -80,6 +83,22 @@ async def _route(
         return AskResponse(session_id="", type=AskResponseType.GENERAL_INFO, answer_text=answer.answer_text)
 
     if classification.scope == AskScope.EDIT_INSTRUCTION:
+        # Drafting is safe for any role (nothing writes without a separate
+        # reviewer/admin approval) but is rate-limited per user, same as the
+        # Suggest API — see app/core/rate_limit.py. Skipped when user_id is
+        # unavailable (e.g. a direct pipeline call with no authenticated caller).
+        if user_id is not None:
+            try:
+                check_draft_rate_limit(user_id)
+            except DraftRateLimitExceeded as exc:
+                return AskResponse(
+                    session_id="",
+                    type=AskResponseType.RATE_LIMITED,
+                    answer_text=(
+                        f"You're drafting edits too quickly — try again in "
+                        f"{exc.retry_after_seconds}s."
+                    ),
+                )
         return await handle_edit_instruction(store, db, classification, tenant_id=tenant_id)
 
     if classification.scope == AskScope.COMPLIANCE_STATUS_QUESTION:

@@ -471,3 +471,38 @@ during any pytest run (mocked or live) would be a genuine testing-discipline
 violation, so `test_high_severity_finding_creates_notification_row` forces
 `settings.resend_api_key = ""` via monkeypatch regardless of what `.env`
 holds. Email delivery itself is a manual verification step only.
+
+### Per-user draft rate limiting — Redis's first real use in this project
+
+Added after a design discussion during manual testing: any role may draft an
+edit (via Suggest or Ask's edit-instruction handoff) since drafting never
+writes to a real document — but nothing stopped one user from flooding the
+approval queue with unlimited drafts. Rather than restricting *who* can draft
+(which would make the `end_user` role purely read-only and doesn't match how
+a real compliance team works — the person who spots an issue isn't always
+the person authorized to approve the fix), this caps *how many* drafts one
+user can queue per window: 10 per 10 minutes by default
+(`DRAFT_RATE_LIMIT_MAX` / `DRAFT_RATE_LIMIT_WINDOW_SECONDS`).
+
+Backed by Redis — the `infra/docker-compose.yml` container and `REDIS_URL`
+setting have existed since Phase 0 but were never actually used until now.
+`app/core/rate_limit.py` follows the same two-implementation pattern as
+`GraphStore` (Neo4j vs. in-memory): `RedisRateLimiter` for real use,
+`InMemoryRateLimiter` so the mocked test suite never needs Docker. If Redis
+is unreachable, it fails **open** (allows the request, logs a warning) rather
+than blocking drafting entirely — consistent with how every other optional
+piece of infra in this project degrades (Neo4j/Postgres connectivity checks
+at startup, the LLM cache, Resend email).
+
+Applied at two call sites: `POST /api/suggest/from-finding/{id}` and
+`POST /api/suggest/standalone` (as a FastAPI dependency,
+`enforce_draft_rate_limit`, swapped in for the plain `get_current_user`
+dependency), and Ask's `EDIT_INSTRUCTION` route inside
+`app/agents/ask/pipeline.py::_route` (a direct function call, since that code
+path isn't behind FastAPI's dependency injection) — the latter needed
+`handle_ask`/`_route` to gain an optional `user_id` parameter threaded down
+from the JWT, since Ask's chat sessions are tenant-wide, not per-user
+(Phase 4 anticipated exactly this: see the `ChatSession` docstring). Returns
+a real `429` with a `Retry-After` header from the REST endpoints; from Ask,
+a new `AskResponseType.RATE_LIMITED` structured response, consistent with
+Ask never letting an exception reach the API layer for an expected outcome.

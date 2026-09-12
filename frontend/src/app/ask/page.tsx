@@ -28,6 +28,7 @@ const TYPE_LABELS: Record<AskResponseType, string> = {
   general_info: "General legal-tech info",
   out_of_scope: "Out of scope",
   abstained: "I don't know",
+  rate_limited: "Slow down",
 };
 
 const TYPE_STYLES: Record<AskResponseType, string> = {
@@ -37,6 +38,7 @@ const TYPE_STYLES: Record<AskResponseType, string> = {
   general_info: "bg-neutral-200 text-neutral-700",
   out_of_scope: "bg-neutral-200 text-neutral-500",
   abstained: "bg-amber-100 text-amber-800",
+  rate_limited: "bg-red-100 text-red-800",
 };
 
 export default function AskPage() {

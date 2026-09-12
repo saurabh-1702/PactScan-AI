@@ -216,7 +216,8 @@ export type AskResponseType =
   | "edit_draft"
   | "general_info"
   | "out_of_scope"
-  | "abstained";
+  | "abstained"
+  | "rate_limited";
 
 export interface AskSourceInfo {
   document_name: string;

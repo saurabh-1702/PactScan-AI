@@ -66,6 +66,7 @@ class AskResponseType(str, enum.Enum):
     GENERAL_INFO = "general_info"
     OUT_OF_SCOPE = "out_of_scope"
     ABSTAINED = "abstained"
+    RATE_LIMITED = "rate_limited"
 
 
 class AskResponse(BaseModel):

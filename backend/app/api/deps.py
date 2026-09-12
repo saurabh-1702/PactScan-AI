@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from app.core.rate_limit import DraftRateLimitExceeded, RateLimiter, check_draft_rate_limit, get_rate_limiter
 from app.core.security import InvalidTokenError, decode_access_token
 
 _bearer = HTTPBearer(auto_error=False)
@@ -34,6 +35,23 @@ def get_current_user(
     return CurrentUser(
         user_id=payload["sub"], tenant_id=payload["tenant_id"], role=payload["role"]
     )
+
+
+def enforce_draft_rate_limit(
+    current_user: CurrentUser = Depends(get_current_user),
+    limiter: RateLimiter = Depends(get_rate_limiter),
+) -> CurrentUser:
+    """Any role may draft an edit — this only caps how many one user can
+    queue per window. See app/core/rate_limit.py."""
+    try:
+        check_draft_rate_limit(current_user.user_id, limiter)
+    except DraftRateLimitExceeded as exc:
+        raise HTTPException(
+            status_code=429,
+            detail=f"You're drafting too quickly — try again in {exc.retry_after_seconds}s.",
+            headers={"Retry-After": str(exc.retry_after_seconds)},
+        ) from exc
+    return current_user
 
 
 def require_role(allowed_roles: list[str]):

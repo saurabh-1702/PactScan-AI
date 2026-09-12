@@ -46,12 +46,22 @@ gracefully with no key configured).
   notification bell (replacing each page's own inline nav links), and a
   client-side route guard redirecting to `/login` without a valid JWT
 - New: `backend/app/core/security.py` (hashing + JWT), `backend/app/api/deps.py`
-  (`get_current_user`, `require_role`), `backend/app/agents/notifications/`,
-  `tenants` / `users` / `notifications` Postgres tables, `tenant_id` added to
-  `redline_suggestions` and `document_versions`
-- Tests: 52 mocked pass (5 new, incl. the tenant-isolation exit-criteria test
-  with two seeded tenants); not yet run live or manually tested — pending
-  before merge to `develop`
+  (`get_current_user`, `require_role`, `enforce_draft_rate_limit`),
+  `backend/app/agents/notifications/`, `tenants` / `users` / `notifications`
+  Postgres tables, `tenant_id` added to `redline_suggestions` and
+  `document_versions`
+- **Per-user draft rate limiting**: any role may draft an edit (Suggest, or
+  Ask's edit-instruction handoff) — drafting is always safe, since nothing
+  writes to a real document without a separate reviewer/admin approval — but
+  it's capped at `DRAFT_RATE_LIMIT_MAX` (default 10) per
+  `DRAFT_RATE_LIMIT_WINDOW_SECONDS` (default 600) per user. Backed by
+  Redis (`backend/app/core/rate_limit.py`) — the first real use of the Redis
+  container provisioned since Phase 0; fails open if Redis is unreachable.
+  Exceeding it returns `429` with a `Retry-After` header from the REST
+  endpoints, or an `AskResponseType.RATE_LIMITED` structured response from Ask.
+- Tests: 56 mocked pass (9 new, incl. the tenant-isolation exit-criteria test
+  with two seeded tenants, and rate-limit tests for both entry points); not
+  yet run live or manually tested — pending before merge to `develop`
 
 **Phase 4 complete and merged to `develop` — Ask agent (chatbot, contract Q&A, compliance-status Q&A, general legal-tech Q&A, edit-instruction handoff, chat history).** Scope
 expanded beyond the literal phase prompt at the user's request: two extra

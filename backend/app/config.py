@@ -102,6 +102,15 @@ class Settings(BaseSettings):
     resend_api_key: str = ""
     notification_email_from: str = "onboarding@resend.dev"
 
+    # --- Draft rate limiting (Phase 5) ---
+    # Any role may draft an edit (Suggest, or Ask's edit-instruction handoff) —
+    # drafting is always safe, since nothing writes to a real document without
+    # a separate reviewer/admin approval. This just stops one user flooding
+    # the approval queue. Backed by Redis (provisioned since Phase 0,
+    # previously unused); fails open if Redis is unreachable.
+    draft_rate_limit_max: int = 10
+    draft_rate_limit_window_seconds: int = 600
+
     # --- App ---
     environment: str = "development"
 

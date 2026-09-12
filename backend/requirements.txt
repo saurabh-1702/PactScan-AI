@@ -15,7 +15,7 @@ python-dotenv==1.2.3
 neo4j==6.2.0
 sqlalchemy==2.0.44
 psycopg2-binary==2.9.13           # 2.9.10 (prompt pin) cp314 wheel fails DLL load on Python 3.14; see docs/SETUP_NOTES.md
-redis==5.2.1
+redis==5.2.1                      # provisioned since Phase 0; first actual use is Phase 5's draft rate limiter
 
 # --- LLM + document parsing (Phase 1) ---
 groq==1.7.0                      # primary LLM provider (free tier >> Gemini's); OpenAI-compatible
