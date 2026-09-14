@@ -28,6 +28,7 @@ const TYPE_LABELS: Record<AskResponseType, string> = {
   general_info: "General legal-tech info",
   out_of_scope: "Out of scope",
   abstained: "I don't know",
+  rate_limited: "Slow down",
 };
 
 const TYPE_STYLES: Record<AskResponseType, string> = {
@@ -37,6 +38,7 @@ const TYPE_STYLES: Record<AskResponseType, string> = {
   general_info: "bg-neutral-200 text-neutral-700",
   out_of_scope: "bg-neutral-200 text-neutral-500",
   abstained: "bg-amber-100 text-amber-800",
+  rate_limited: "bg-red-100 text-red-800",
 };
 
 export default function AskPage() {
@@ -123,14 +125,9 @@ export default function AskPage() {
   }
 
   return (
-    <main className="mx-auto flex h-screen max-w-5xl">
+    <main className="mx-auto flex min-h-0 flex-1 max-w-5xl">
       <aside className="w-56 shrink-0 border-r border-neutral-200 p-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold">Conversations</h2>
-          <Link href="/detect" className="text-xs text-sky-700 underline">
-            Detect
-          </Link>
-        </div>
+        <h2 className="text-sm font-semibold">Conversations</h2>
         <button
           type="button"
           onClick={startNewChat}

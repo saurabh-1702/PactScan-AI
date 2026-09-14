@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   decideApproval,
-  documentDownloadUrl,
+  downloadDocumentVersion,
   getAllApprovals,
   getDocumentVersions,
   type Approval,
@@ -22,6 +22,8 @@ export default function ApprovalsPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editedText, setEditedText] = useState<Record<string, string>>({});
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [rejectNote, setRejectNote] = useState<Record<string, string>>({});
   const [toast, setToast] = useState<string | null>(null);
   const [versionsByContract, setVersionsByContract] = useState<
     Record<string, DocumentVersionInfo[]>
@@ -53,18 +55,33 @@ export default function ApprovalsPage() {
     setTimeout(() => setToast(null), 4000);
   }
 
-  async function onDecide(a: Approval, decision: "approved" | "rejected", useEdit: boolean) {
+  async function onDownload(versionId: string, contractId: string, versionNumber: number) {
+    try {
+      await downloadDocumentVersion(versionId, `${contractId}_v${versionNumber}.docx`);
+    } catch (err) {
+      showToast(`Download failed: ${err instanceof Error ? err.message : "unknown error"}`);
+    }
+  }
+
+  async function onDecide(
+    a: Approval,
+    decision: "approved" | "rejected",
+    useEdit: boolean,
+    note?: string,
+  ) {
     setBusyId(a.id);
     try {
       await decideApproval(a.id, decision, {
         editedText: useEdit ? editedText[a.id] : undefined,
+        note,
       });
       showToast(
         decision === "approved"
           ? `Approved — the redline was written into a new document version.`
-          : `Rejected — no file was touched.`,
+          : `Rejected — the requester will see your note, and no file was touched.`,
       );
       setEditingId(null);
+      setRejectingId(null);
       await load();
     } catch (err) {
       showToast(`Failed: ${err instanceof Error ? err.message : "unknown error"}`);
@@ -114,6 +131,7 @@ export default function ApprovalsPage() {
             <ul className="mt-3 space-y-4">
               {pending.map((a) => {
                 const isEditing = editingId === a.id;
+                const isRejecting = rejectingId === a.id;
                 const isBusy = busyId === a.id;
                 const versions = versionsByContract[a.contract_id] ?? [];
                 const latest = versions[versions.length - 1];
@@ -156,8 +174,25 @@ export default function ApprovalsPage() {
                       {a.rationale}
                     </p>
 
+                    {isRejecting && (
+                      <div className="mt-3 rounded border border-red-300 bg-red-50 p-2">
+                        <p className="text-xs font-semibold uppercase text-red-700">
+                          Reason for rejection (shown to whoever requested this fix)
+                        </p>
+                        <textarea
+                          className="mt-1 w-full rounded border border-neutral-300 p-2 text-sm"
+                          rows={3}
+                          placeholder="e.g. This cap is still too low for our risk tolerance."
+                          value={rejectNote[a.id] ?? ""}
+                          onChange={(e) =>
+                            setRejectNote((prev) => ({ ...prev, [a.id]: e.target.value }))
+                          }
+                        />
+                      </div>
+                    )}
+
                     <div className="mt-3 flex flex-wrap items-center gap-2">
-                      {!isEditing && (
+                      {!isEditing && !isRejecting && (
                         <>
                           <button
                             type="button"
@@ -170,7 +205,7 @@ export default function ApprovalsPage() {
                           <button
                             type="button"
                             disabled={isBusy}
-                            onClick={() => onDecide(a, "rejected", false)}
+                            onClick={() => setRejectingId(a.id)}
                             className="rounded bg-red-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
                           >
                             Reject
@@ -208,14 +243,35 @@ export default function ApprovalsPage() {
                           </button>
                         </>
                       )}
+                      {isRejecting && (
+                        <>
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => onDecide(a, "rejected", false, rejectNote[a.id])}
+                            className="rounded bg-red-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
+                          >
+                            {isBusy ? "Working…" : "Confirm reject"}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => setRejectingId(null)}
+                            className="rounded border border-neutral-400 px-3 py-1.5 text-xs font-semibold"
+                          >
+                            Cancel
+                          </button>
+                        </>
+                      )}
 
                       {latest && (
-                        <a
-                          href={documentDownloadUrl(latest.id)}
+                        <button
+                          type="button"
+                          onClick={() => onDownload(latest.id, a.contract_id, latest.version_number)}
                           className="ml-auto text-xs font-semibold text-sky-700 underline"
                         >
                           Download latest document (v{latest.version_number})
-                        </a>
+                        </button>
                       )}
                     </div>
                   </li>
@@ -251,12 +307,13 @@ export default function ApprovalsPage() {
                         {a.decided_at ? new Date(a.decided_at).toLocaleString() : "—"}
                       </span>
                       {a.status === "approved" && latest && (
-                        <a
-                          href={documentDownloadUrl(latest.id)}
+                        <button
+                          type="button"
+                          onClick={() => onDownload(latest.id, a.contract_id, latest.version_number)}
                           className="ml-auto text-xs font-semibold text-sky-700 underline"
                         >
                           Download document (v{latest.version_number})
-                        </a>
+                        </button>
                       )}
                     </div>
                     {a.reviewer_note && (

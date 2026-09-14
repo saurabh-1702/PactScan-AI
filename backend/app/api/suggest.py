@@ -22,6 +22,7 @@ from app.agents.suggest.pipeline import (
     suggest_from_finding,
     suggest_standalone,
 )
+from app.api.deps import CurrentUser, enforce_draft_rate_limit
 from app.db.postgres_client import get_db
 from app.models.redline import StandaloneSuggestRequest, SuggestResult
 
@@ -39,9 +40,16 @@ async def suggest_from_finding_endpoint(
     finding_id: str,
     store: GraphStore = Depends(get_store),
     db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(enforce_draft_rate_limit),
 ) -> SuggestResult:
     try:
-        return await suggest_from_finding(store, db, finding_id)
+        return await suggest_from_finding(
+            store,
+            db,
+            finding_id,
+            tenant_id=current_user.tenant_id,
+            requested_by_user_id=current_user.user_id,
+        )
     except SuggestInputError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RuntimeError as exc:
@@ -54,10 +62,17 @@ async def suggest_standalone_endpoint(
     body: StandaloneSuggestRequest,
     store: GraphStore = Depends(get_store),
     db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(enforce_draft_rate_limit),
 ) -> SuggestResult:
     try:
         return await suggest_standalone(
-            store, db, body.contract_id, body.clause_id, body.change_request
+            store,
+            db,
+            body.contract_id,
+            body.clause_id,
+            body.change_request,
+            tenant_id=current_user.tenant_id,
+            requested_by_user_id=current_user.user_id,
         )
     except SuggestInputError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

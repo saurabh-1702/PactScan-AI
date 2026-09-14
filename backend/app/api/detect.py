@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.agents.detect.graph_store import GraphStore, get_graph_store
 from app.agents.detect.pipeline import get_report, ingest_and_detect
+from app.api.deps import CurrentUser, get_current_user
 from app.db.postgres_client import get_db
 from app.models.clause import DetectReport
 
@@ -35,6 +36,7 @@ async def detect(
     file: UploadFile = File(...),
     store: GraphStore = Depends(get_store),
     db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> DetectReport:
     filename = file.filename or "contract.pdf"
     suffix = Path(filename).suffix.lower()
@@ -52,7 +54,9 @@ async def detect(
     tmp_path = tmp_dir / filename
     tmp_path.write_bytes(data)
     try:
-        report = await ingest_and_detect(store, tmp_path, filename, db=db)
+        report = await ingest_and_detect(
+            store, tmp_path, filename, tenant_id=current_user.tenant_id, db=db
+        )
     except RuntimeError as exc:
         logger.exception("Detect pipeline failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
@@ -70,8 +74,9 @@ async def detect(
 async def get_detect(
     contract_id: str,
     store: GraphStore = Depends(get_store),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> DetectReport:
-    report = get_report(store, contract_id)
+    report = get_report(store, contract_id, tenant_id=current_user.tenant_id)
     if report is None:
         raise HTTPException(status_code=404, detail=f"Contract {contract_id!r} not found.")
     return report

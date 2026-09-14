@@ -11,13 +11,14 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app.agents.detect.graph_store import InMemoryGraphStore
+from app.agents.detect.graph_store import DEMO_TENANT, InMemoryGraphStore
 from app.agents.detect.pipeline import ingest_and_detect
 from app.agents.detect.seed_data import seed
 from app.api.ask import get_store as ask_get_store
+from app.api.deps import CurrentUser, get_current_user
 from app.db.postgres_client import get_db
 from app.main import app
-from tests.conftest import _CANNED_DOCS, _FakeLLM, _fake_embedding_vector
+from tests.conftest import _CANNED_DOCS, _FakeLLM, _fake_embedding_vector, default_current_user
 
 
 @pytest.fixture
@@ -59,6 +60,7 @@ def api_client(populated_store_and_db):
 
     app.dependency_overrides[ask_get_store] = lambda: store
     app.dependency_overrides[get_db] = _override_get_db
+    app.dependency_overrides[get_current_user] = default_current_user
     try:
         yield TestClient(app), store, db
     finally:
@@ -94,6 +96,50 @@ def test_ask_endpoint_and_session_listing_and_replay(api_client):
 def test_ask_sessions_unknown_id_404(api_client):
     client, _store, _db = api_client
     resp = client.get("/api/ask/sessions/cs_does_not_exist/messages")
+    assert resp.status_code == 404
+
+
+def test_chat_sessions_are_isolated_between_users_in_the_same_tenant(api_client):
+    """Regression test: Phase 4's ChatSession was tenant-wide with no user_id
+    at all, so any two users under the same tenant (e.g. the seeded end_user
+    and reviewer demo accounts) could see and replay each other's Ask
+    conversations. Fixed in Phase 5 by adding ChatSession.user_id and scoping
+    every session query by it, not just tenant_id."""
+    client, _store, _db = api_client
+    user_a = CurrentUser(user_id="usr_a", tenant_id=DEMO_TENANT, role="end_user")
+    user_b = CurrentUser(user_id="usr_b", tenant_id=DEMO_TENANT, role="reviewer")
+
+    app.dependency_overrides[get_current_user] = lambda: user_a
+    resp_a = client.post("/api/ask", json={"message": "What is the DPDP Act?"})
+    assert resp_a.status_code == 200, resp_a.text
+    session_a = resp_a.json()["session_id"]
+
+    app.dependency_overrides[get_current_user] = lambda: user_b
+    resp_b = client.post("/api/ask", json={"message": "What is the DPDP Act?"})
+    assert resp_b.status_code == 200, resp_b.text
+    session_b = resp_b.json()["session_id"]
+    assert session_b != session_a
+
+    # A's session list must not include B's session, and vice versa
+    sessions_b = client.get("/api/ask/sessions").json()
+    assert session_a not in [s["id"] for s in sessions_b]
+    assert session_b in [s["id"] for s in sessions_b]
+
+    app.dependency_overrides[get_current_user] = lambda: user_a
+    sessions_a = client.get("/api/ask/sessions").json()
+    assert session_b not in [s["id"] for s in sessions_a]
+    assert session_a in [s["id"] for s in sessions_a]
+
+    # Nor can A replay B's messages directly by id, or vice versa
+    assert client.get(f"/api/ask/sessions/{session_b}/messages").status_code == 404
+
+    app.dependency_overrides[get_current_user] = lambda: user_b
+    assert client.get(f"/api/ask/sessions/{session_a}/messages").status_code == 404
+
+    # ...or hijack it by passing its id as their own session_id on a new message
+    resp = client.post(
+        "/api/ask", json={"message": "Another question", "session_id": session_a}
+    )
     assert resp.status_code == 404
 
 

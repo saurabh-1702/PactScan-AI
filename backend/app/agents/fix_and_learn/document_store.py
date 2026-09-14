@@ -83,6 +83,7 @@ def ensure_initial_version(
     path.write_bytes(content)
 
     version = DocumentVersion(
+        tenant_id=tenant_id,
         contract_id=contract_id,
         version_number=1,
         file_path=str(path),

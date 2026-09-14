@@ -12,9 +12,10 @@ from pathlib import Path
 
 import pytest
 
-from app.agents.detect.graph_store import InMemoryGraphStore
+from app.agents.detect.graph_store import DEMO_TENANT, InMemoryGraphStore
 from app.agents.detect.ingest import ParsedDocument, ParsedPage
 from app.agents.detect.seed_data import seed
+from app.api.deps import CurrentUser
 from app.models.clause import (
     BatchNLIItem,
     BatchNLIResult,
@@ -535,6 +536,43 @@ def fake_parse(monkeypatch):
 
     monkeypatch.setattr("app.agents.detect.ingest.parse_document", _parse)
     return _parse
+
+
+# --------------------------------------------------------------------------- #
+# Auth (Phase 5) — API tests that exercise endpoint wiring rather than
+# auth/role-gating itself all default to this admin user under DEMO_TENANT,
+# matching the tenant_id the rest of these fixtures build data under.
+# test_auth_and_dashboard.py overrides get_current_user explicitly per-test
+# instead, to actually exercise 401/403 paths.
+# --------------------------------------------------------------------------- #
+def default_current_user() -> CurrentUser:
+    return CurrentUser(user_id="usr_test_admin", tenant_id=DEMO_TENANT, role="admin")
+
+
+# --------------------------------------------------------------------------- #
+# Draft rate limiting (Phase 5) — RedisRateLimiter fails open when Redis is
+# unreachable, but on a machine where Redis happens to actually be running
+# (e.g. left up from manual testing), the real limiter would enforce for
+# real and leak state ACROSS separate pytest runs via Redis's own persistence
+# and TTLs — the exact opposite of a hermetic mocked test. Autouse so no test
+# file has to remember to override this individually; test_rate_limit.py
+# overrides it again per-test where it needs to control the limit itself.
+# --------------------------------------------------------------------------- #
+@pytest.fixture(autouse=True)
+def _no_real_redis_in_mocked_tests(monkeypatch):
+    from app.api.deps import get_rate_limiter as deps_get_rate_limiter
+    from app.core.rate_limit import InMemoryRateLimiter
+    from app.main import app as _app
+
+    limiter = InMemoryRateLimiter()
+    # Covers both call shapes: the FastAPI-DI path (suggest.py's
+    # enforce_draft_rate_limit) and the direct function-call path
+    # (Ask's _route, which resolves get_rate_limiter() from this module's
+    # own globals at call time — app.dependency_overrides has no effect there).
+    _app.dependency_overrides[deps_get_rate_limiter] = lambda: limiter
+    monkeypatch.setattr("app.core.rate_limit.get_rate_limiter", lambda: limiter)
+    yield
+    _app.dependency_overrides.pop(deps_get_rate_limiter, None)
 
 
 @pytest.fixture

@@ -10,8 +10,75 @@ This folder holds the project specification and the phase-by-phase build plan.
 | `PactScan_AI_Known_Issues_And_Lessons_Learned.md` | Running log of environment bugs, process mistakes, and their fixes — **read before debugging**. Appended to whenever a new issue is hit and fixed. |
 | `Phase_0_Repo_Setup_Prompt.md` … `Phase_7_Polish_And_Demo_Prep_Prompt.md` | The phase-by-phase build instructions. Phase 0 = repo/env scaffold; Phase 1 = Detect agent; Phase 2 = Suggest; Phase 3 = Fix & Learn; Phase 4 = Ask agent; Phase 5 = Login/Dashboard/Notifications; Phase 6 = Horizon-Scanning & Restore; Phase 7 = Polish & Demo prep. |
 | `SETUP_NOTES.md` | Deviations from the phase prompts made during the actual build (dependency version substitutions, tooling notes). |
+| `PactScan_AI_Ideas_And_Scope_Additions_Log.md` | Features added beyond what a phase prompt literally asked for — whose idea, what was built, and why. A paper trail of where the build went past the floor a prompt set. |
 
 ## Current status
+
+**Phase 5 built — Login, role-based dashboard, real-time notifications.** Real
+email/password auth (bcrypt + JWT, no SSO — a deliberate simplification per
+the phase prompt) replaces the hardcoded `tenant_id = "demo_tenant"` used
+throughout Phases 1-4; every existing endpoint now resolves the real tenant
+and role from the caller's JWT. `POST /api/approvals/{id}/decide` is gated to
+`reviewer`/`admin` roles only. A dashboard visualizes data Phases 1-3 already
+computed (nothing new is calculated) — severity breakdown, approvals-by-status,
+and a findings pipeline derived by joining Neo4j findings with Postgres
+suggestions/approvals. New findings fire an in-app notification, and HIGH
+severity ones additionally attempt an email via Resend (optional — degrades
+gracefully with no key configured).
+
+- **⚠️ One-time action required before running this phase**: Phases 2-4 never
+  gave `redline_suggestions`/`document_versions` a `tenant_id` column, and
+  there's still no migration framework, so this is a breaking schema change
+  for any existing dev Postgres volume. Reset it once:
+  ```
+  cd infra
+  docker compose down -v
+  docker compose up -d
+  ```
+- **Demo accounts** (seeded automatically at backend startup, under
+  `tenant_id = "demo_tenant"`): `enduser@demo.pactscan.ai` (role `end_user`)
+  and `reviewer@demo.pactscan.ai` (role `reviewer`), both with password
+  `PactScanDemo123!`. Register additional accounts via `POST /api/auth/register`.
+- `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/notifications`,
+  `POST /api/notifications/{id}/mark-read`, `GET /api/dashboard/overview`,
+  `GET /api/dashboard/findings-pipeline`
+- Frontend: `/login`, `/dashboard` (role-aware — reviewers/admins additionally
+  see a Pending Approvals panel), a shared header with nav + a polling
+  notification bell (replacing each page's own inline nav links), and a
+  client-side route guard redirecting to `/login` without a valid JWT
+- New: `backend/app/core/security.py` (hashing + JWT), `backend/app/api/deps.py`
+  (`get_current_user`, `require_role`, `enforce_draft_rate_limit`),
+  `backend/app/agents/notifications/`, `tenants` / `users` / `notifications`
+  Postgres tables, `tenant_id` added to `redline_suggestions` and
+  `document_versions`
+- **Per-user draft rate limiting**: any role may draft an edit (Suggest, or
+  Ask's edit-instruction handoff) — drafting is always safe, since nothing
+  writes to a real document without a separate reviewer/admin approval — but
+  it's capped at `DRAFT_RATE_LIMIT_MAX` (default 10) per
+  `DRAFT_RATE_LIMIT_WINDOW_SECONDS` (default 600) per user. Backed by
+  Redis (`backend/app/core/rate_limit.py`) — the first real use of the Redis
+  container provisioned since Phase 0; fails open if Redis is unreachable.
+  Exceeding it returns `429` with a `Retry-After` header from the REST
+  endpoints, or an `AskResponseType.RATE_LIMITED` structured response from Ask.
+- **Per-user chat isolation**: `ChatSession` gained `user_id` (Phase 4's own
+  docstring anticipated this, but it wasn't actually done until manual
+  testing caught two different users under the same tenant seeing each
+  other's Ask conversations). Every session query is now scoped by
+  `(tenant_id, user_id)`, and reusing someone else's `session_id` 404s.
+- **Closing the loop back to the requester**: once a reviewer/admin decides a
+  pending approval, whoever originally requested that draft (Suggest, or
+  Ask's edit-instruction handoff) gets a targeted notification —
+  `RedlineSuggestion.requested_by_user_id` tracks the requester,
+  `Notification.kind="approval_decided"` addresses it to just that person.
+  Rejected includes the reviewer's note (now actually collected — the
+  frontend's Reject button never had an input for it before this); approved
+  includes a direct download link to the new version, worded differently if
+  the reviewer wrote their own edit rather than using the exact drafted text.
+- Tests: 61 mocked pass (14 new, incl. the tenant-isolation exit-criteria test
+  with two seeded tenants, rate-limit tests for both entry points, a
+  cross-user chat-session isolation regression test, and full coverage of
+  all three requester-notification outcomes); not
+  yet run live or manually tested — pending before merge to `develop`
 
 **Phase 4 complete and merged to `develop` — Ask agent (chatbot, contract Q&A, compliance-status Q&A, general legal-tech Q&A, edit-instruction handoff, chat history).** Scope
 expanded beyond the literal phase prompt at the user's request: two extra

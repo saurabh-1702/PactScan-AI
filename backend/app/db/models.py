@@ -12,9 +12,10 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.agents.detect.graph_store import DEMO_TENANT
 from app.db.postgres_client import Base
 
 
@@ -22,6 +23,18 @@ class RedlineSuggestion(Base):
     __tablename__ = "redline_suggestions"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: f"sg_{uuid.uuid4().hex[:16]}")
+    # Added Phase 5 — Phases 2-4 had no Postgres-side tenant column at all
+    # (only the Neo4j graph and Phase 4's ChatSession/ChatMessage did), which
+    # made real tenant-isolated queries (dashboard, approval listing)
+    # impossible. Defaults to DEMO_TENANT so any pre-Phase-5 row a fresh
+    # create_all() happens to see still has a valid value.
+    tenant_id: Mapped[str] = mapped_column(String(40), index=True, default=DEMO_TENANT)
+    # Who asked for this draft — end_user and reviewer/admin alike may draft
+    # (see app/core/rate_limit.py's design note). Nullable: a suggestion
+    # drafted before this column existed, or via a direct pipeline call with
+    # no authenticated caller, has no traceable requester, and the decision
+    # notification is simply skipped for those.
+    requested_by_user_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     finding_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     contract_id: Mapped[str] = mapped_column(String(40), index=True)
     clause_id: Mapped[str] = mapped_column(String(40), index=True)
@@ -71,6 +84,10 @@ class DocumentVersion(Base):
     __tablename__ = "document_versions"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: f"dv_{uuid.uuid4().hex[:16]}")
+    # Added Phase 5 alongside RedlineSuggestion.tenant_id, for the same reason:
+    # /api/documents/* had no way to confirm a requester's tenant actually owns
+    # the document being listed/downloaded.
+    tenant_id: Mapped[str] = mapped_column(String(40), index=True, default=DEMO_TENANT)
     contract_id: Mapped[str] = mapped_column(String(40), index=True)
     version_number: Mapped[int] = mapped_column(Integer)
     file_path: Mapped[str] = mapped_column(String(500))
@@ -111,14 +128,82 @@ class PlaybookFeedback(Base):
     )
 
 
+class Tenant(Base):
+    """Phase 5: real multi-tenant identity, replacing the hardcoded
+    DEMO_TENANT string every prior phase used directly. One row
+    (id=DEMO_TENANT) is seeded at startup so existing Neo4j/Postgres data
+    keeps resolving to a real tenant."""
+
+    __tablename__ = "tenants"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: f"usr_{uuid.uuid4().hex[:16]}")
+    tenant_id: Mapped[str] = mapped_column(String(40), ForeignKey("tenants.id"), index=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    hashed_password: Mapped[str] = mapped_column(String(255))
+    role: Mapped[str] = mapped_column(String(20))  # "end_user" | "reviewer" | "admin"
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class Notification(Base):
+    """Two kinds, distinguished by ``kind``:
+
+    - ``new_finding`` — fired once per new Finding (see
+      app/agents/notifications/notify.py), right after Detect writes it to
+      the graph. Broadcast tenant-wide (``recipient_user_id`` is None) since
+      any reviewer/admin/end_user may care that a new issue was found.
+      HIGH severity additionally attempts a best-effort email via Resend.
+    - ``approval_decided`` — fired once a reviewer/admin decides a pending
+      approval (see app/api/approvals.py), addressed to the specific user
+      who requested that draft (``recipient_user_id`` set,
+      ``RedlineSuggestion.requested_by_user_id``) — skipped entirely if that
+      draft has no traceable requester. Carries ``document_version_id`` when
+      the decision produced a downloadable document (i.e. any 'approved'
+      outcome), so the requester can download it straight from the bell
+      without needing access to /approvals.
+    """
+
+    __tablename__ = "notifications"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: f"ntf_{uuid.uuid4().hex[:16]}")
+    kind: Mapped[str] = mapped_column(String(30), default="new_finding")
+    tenant_id: Mapped[str] = mapped_column(String(40), index=True)
+    # None = broadcast to every user in the tenant (all new_finding rows);
+    # set = addressed to exactly one user (all approval_decided rows).
+    recipient_user_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    finding_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    severity: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    message: Mapped[str] = mapped_column(Text)
+    document_version_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
 class ChatSession(Base):
-    """One Ask-agent conversation. Tenant-wide, not yet per-user — Phase 5
-    adds login/roles, at which point this gains a user_id column."""
+    """One Ask-agent conversation, scoped to the user who started it (Phase 5
+    — Phase 4 only had tenant_id, since login/roles didn't exist yet).
+    Nullable only so a pre-Phase-5 row surviving a schema reset doesn't
+    violate a NOT NULL constraint; every row created from here on always
+    sets it."""
 
     __tablename__ = "chat_sessions"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: f"cs_{uuid.uuid4().hex[:16]}")
     tenant_id: Mapped[str] = mapped_column(String(40), index=True)
+    user_id: Mapped[str | None] = mapped_column(String(40), index=True, nullable=True)
     title: Mapped[str] = mapped_column(String(200), default="New conversation")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)

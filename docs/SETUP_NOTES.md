@@ -385,3 +385,177 @@ session — this is correct, by-design behaviour for a portfolio-wide Ask
 agent (Section 4.5 of the project spec: "every contract a company has ever
 uploaded... regardless of when"), not a bug, but it does mean old manual-test
 contracts will show up in portfolio answers unless deliberately wiped.
+
+---
+
+## Phase 5
+
+### A Postgres schema gap the phase prompt didn't call out
+
+Phases 2-4 never gave `redline_suggestions`, `approvals`, or `document_versions`
+a `tenant_id` column at all — only the Neo4j graph and Phase 4's
+`chat_sessions`/`chat_messages` were tenant-scoped. The phase's own exit
+criteria ("dashboard endpoints only return data belonging to the requesting
+user's tenant") was untestable for approvals/suggestions without one. Added
+`tenant_id` to `RedlineSuggestion` (already passed into the Suggest pipeline,
+just never persisted) and to `DocumentVersion` (for `/api/documents/*`, given
+this build's decision to make document access tenant-isolated, not just
+login-gated). `Approval` stays un-denormalized — it's scoped via a join to
+`RedlineSuggestion.tenant_id`, which is simpler than keeping a second copy in
+sync.
+
+**Because there's still no migration framework**, this is a genuinely
+breaking schema change for anyone with an existing dev Postgres volume:
+`Base.metadata.create_all()` only creates missing tables, it never alters an
+existing one to add a column. Anyone pulling this phase must reset their dev
+Postgres volume (`docker compose down -v` under `infra/`) before starting the
+backend — see docs/README.md's Phase 5 section for the exact command. This is
+a one-time, demo-data-only reset; there's no real user data yet to preserve.
+
+### passlib + bcrypt: the exact same class of pin problem as pydantic in Phase 0
+
+**The bug:** `passlib==1.7.4` (its last release; effectively unmaintained)
+reads `bcrypt.__about__.__version__` at import time to detect the backend
+version. `bcrypt>=4.1` removed that attribute entirely, so the very first
+`CryptContext(schemes=["bcrypt"]).hash(...)` call raised
+`AttributeError: module 'bcrypt' has no attribute '__about__'`, masked behind
+a confusing second exception ("password cannot be longer than 72 bytes")
+because passlib's error-recovery path swallows the real cause.
+**The fix, applied:** pin `bcrypt==4.0.1` (last version with `__about__`)
+directly in `requirements.txt`, rather than relying on `passlib[bcrypt]`'s
+extra, which floats to the latest bcrypt and re-triggers this. **Same lesson
+as Phase 0's pydantic/psycopg2 pins: an unmaintained package's stated
+dependency range can't be trusted against a dependency that's still receiving
+releases — pin the transitive dependency explicitly once this happens.**
+
+### JWT bearer auth breaks plain `<a href>` downloads
+
+**The bug:** `/api/documents/version/{id}/download` now requires
+`Authorization: Bearer <token>`, but the existing frontend used a plain
+`<a href={url}>` for the download link — a browser navigation triggered by
+clicking a link never attaches a custom header, so every download would have
+401'd once auth was retrofitted onto that endpoint.
+**The fix, applied (`frontend/src/lib/api.ts::downloadDocumentVersion`):**
+fetch the file with the auth header attached (like every other API call),
+turn the response into a `Blob`, hand the browser a local `URL.createObjectURL`
+link, click it programmatically, then revoke the object URL. `approvals/page.tsx`
+now calls this from an `onClick` handler instead of rendering an `<a href>`.
+**Any future authenticated file download must use this pattern, not a plain
+anchor tag — bearer-token auth and simple browser navigation don't mix.**
+
+### Client-side route protection, not server-side
+
+`AuthGate` (in the root layout) redirects to `/login` when no valid,
+unexpired JWT is found in `localStorage` — a client-side check, matching this
+build's demo scope. It is not a security boundary: the actual security
+boundary is the backend re-verifying the JWT signature on every request
+(`get_current_user` / `require_role`), and that boundary is real regardless
+of what the frontend does. A production deployment would add server-side
+route protection (e.g. Next.js middleware checking a cookie) as defense in
+depth, but a determined user editing `localStorage` in devtools can only ever
+make the *frontend* behave oddly — they still can't get the API to accept a
+token they didn't legitimately obtain from `/api/auth/login`.
+
+### Email notifications (Resend) are wired but need a real API key to activate
+
+`app/agents/notifications/notify.py` attempts an email to every reviewer/admin
+in the tenant when a HIGH-severity finding is created, but only if
+`RESEND_API_KEY` is set in `backend\.env` — left blank (the default), it
+degrades to in-app-only notifications, same graceful-skip pattern as every
+other optional third-party key in this project. Without a verified sending
+domain, Resend's sandbox sender (`onboarding@resend.dev`) can only deliver to
+the email address the Resend account itself was created with — fine for this
+project's single demo reviewer account, not for multiple real recipients.
+**Not covered by an automated live test** — sending a real third-party email
+during any pytest run (mocked or live) would be a genuine testing-discipline
+violation, so `test_high_severity_finding_creates_notification_row` forces
+`settings.resend_api_key = ""` via monkeypatch regardless of what `.env`
+holds. Email delivery itself is a manual verification step only.
+
+### Per-user draft rate limiting — Redis's first real use in this project
+
+Added after a design discussion during manual testing: any role may draft an
+edit (via Suggest or Ask's edit-instruction handoff) since drafting never
+writes to a real document — but nothing stopped one user from flooding the
+approval queue with unlimited drafts. Rather than restricting *who* can draft
+(which would make the `end_user` role purely read-only and doesn't match how
+a real compliance team works — the person who spots an issue isn't always
+the person authorized to approve the fix), this caps *how many* drafts one
+user can queue per window: 10 per 10 minutes by default
+(`DRAFT_RATE_LIMIT_MAX` / `DRAFT_RATE_LIMIT_WINDOW_SECONDS`).
+
+Backed by Redis — the `infra/docker-compose.yml` container and `REDIS_URL`
+setting have existed since Phase 0 but were never actually used until now.
+`app/core/rate_limit.py` follows the same two-implementation pattern as
+`GraphStore` (Neo4j vs. in-memory): `RedisRateLimiter` for real use,
+`InMemoryRateLimiter` so the mocked test suite never needs Docker. If Redis
+is unreachable, it fails **open** (allows the request, logs a warning) rather
+than blocking drafting entirely — consistent with how every other optional
+piece of infra in this project degrades (Neo4j/Postgres connectivity checks
+at startup, the LLM cache, Resend email).
+
+Applied at two call sites: `POST /api/suggest/from-finding/{id}` and
+`POST /api/suggest/standalone` (as a FastAPI dependency,
+`enforce_draft_rate_limit`, swapped in for the plain `get_current_user`
+dependency), and Ask's `EDIT_INSTRUCTION` route inside
+`app/agents/ask/pipeline.py::_route` (a direct function call, since that code
+path isn't behind FastAPI's dependency injection) — the latter needed
+`handle_ask`/`_route` to gain an optional `user_id` parameter threaded down
+from the JWT, since Ask's chat sessions are tenant-wide, not per-user
+(Phase 4 anticipated exactly this: see the `ChatSession` docstring). Returns
+a real `429` with a `Retry-After` header from the REST endpoints; from Ask,
+a new `AskResponseType.RATE_LIMITED` structured response, consistent with
+Ask never letting an exception reach the API layer for an expected outcome.
+
+### Chat sessions were tenant-wide, not per-user — found by manual testing
+
+**The bug (found by the user during Phase 5 manual testing):** logging in as
+the reviewer account could see and replay the end_user account's Ask
+conversations, and vice versa. `ChatSession` (Phase 4) only ever had
+`tenant_id` — Phase 4's own docstring even flagged this ("not yet per-user —
+Phase 5 adds login/roles, at which point this gains a `user_id` column"),
+but the column never actually got added when Phase 5 was first built.
+**The fix, applied:** added `ChatSession.user_id` (nullable, so a pre-Phase-5
+row surviving a schema reset doesn't violate a constraint), threaded
+`user_id` through `handle_ask`/`_get_or_create_session` (reusing the same
+parameter already added for per-user rate limiting), and scoped every
+session query — `GET /api/ask/sessions`, `GET /api/ask/sessions/{id}/messages`,
+and reusing an existing `session_id` on a new `POST /api/ask` — by
+`(tenant_id, user_id)` together, not tenant alone. A `session_id` that exists
+but belongs to someone else now 404s rather than being silently replayed or
+silently hijacked into a new conversation.
+
+### Closing the loop: requester-targeted decision notifications
+
+Added on request, after Phase 5's core build: previously, once a reviewer
+decided a pending approval, the person who originally requested that draft
+(via Suggest or Ask's edit-instruction handoff) had no way to find out what
+happened to it — approvals/notifications were either reviewer-only UI or
+tenant-broadcast, with nothing addressed to a specific requester.
+
+- `RedlineSuggestion.requested_by_user_id` (nullable) tracks who asked for
+  each draft, set from the JWT at the two creation points
+  (`/api/suggest/from-finding/{id}`, `/api/suggest/standalone`) and Ask's
+  edit-instruction handoff. Nullable so pre-existing drafts, or ones from a
+  direct pipeline call with no authenticated caller, simply skip the
+  decision notification rather than guessing a recipient.
+- `Notification` gained `kind` (`new_finding` broadcast tenant-wide, vs.
+  `approval_decided` addressed to one `recipient_user_id`) and
+  `document_version_id` (set on any 'approved' outcome, so the requester can
+  download the new version directly from the bell — the download endpoint
+  is tenant-scoped, not role-scoped, so this works for an end_user too,
+  without needing access to `/approvals`).
+- Three distinct outcomes, in `app/agents/notifications/notify.py::notify_approval_decision`:
+  rejected (with the reviewer's note), approved-as-drafted, and
+  approved-but-reviewer-edited (a different message, since the requester's
+  exact wording wasn't the one that shipped) — determined by comparing
+  `Approval.edited_text` against the original `proposed_text`.
+- Skipped if the requester is the same person who decided it — no point
+  notifying a reviewer about their own decision on their own draft.
+- **Found while wiring this up**: the frontend's "Reject" button never
+  actually collected a reason at all, even though the backend's
+  `DecideRequest.note` field already existed and was already displayed back
+  to the reviewer afterward (`Note: {reviewer_note}` on a decided item). The
+  note was always `undefined`. Added a reveal-a-textarea-before-confirming
+  flow (mirroring the existing "Edit" button's pattern) so a reviewer
+  actually writes something before rejecting.

@@ -23,10 +23,19 @@ from app.agents.ask.general_legal import answer_general_question
 from app.agents.ask.scope_classifier import classify_scope
 from app.agents.ask.status_query import build_status_summary, generate_status_answer
 from app.agents.detect.graph_store import DEMO_TENANT, GraphStore
+from app.core.rate_limit import DraftRateLimitExceeded, check_draft_rate_limit
 from app.db.models import ChatMessage, ChatSession
 from app.models.ask import AskResponse, AskResponseType, AskScope
 
 logger = logging.getLogger("pactscan.ask.pipeline")
+
+
+class ChatSessionAccessError(Exception):
+    """Raised when a caller's session_id exists but belongs to someone else —
+    surfaced as a 404 at the API layer (same "don't reveal existence" pattern
+    used for cross-tenant document access), not a silent fallback to a new
+    session."""
+
 
 _OUT_OF_SCOPE_MESSAGE = (
     "I can only help with questions about your contract portfolio, its compliance "
@@ -41,12 +50,13 @@ async def handle_ask(
     message: str,
     session_id: str | None,
     tenant_id: str = DEMO_TENANT,
+    user_id: str | None = None,
 ) -> AskResponse:
-    session = _get_or_create_session(db, session_id, tenant_id, message)
+    session = _get_or_create_session(db, session_id, tenant_id, user_id, message)
     _record_message(db, session.id, role="user", content=message)
 
     classification = await classify_scope(message)
-    response = await _route(store, db, message, classification, tenant_id)
+    response = await _route(store, db, message, classification, tenant_id, user_id)
     response.session_id = session.id
 
     _record_message(
@@ -71,6 +81,7 @@ async def _route(
     message: str,
     classification,
     tenant_id: str,
+    user_id: str | None = None,
 ) -> AskResponse:
     if classification.scope == AskScope.OUT_OF_SCOPE:
         return AskResponse(session_id="", type=AskResponseType.OUT_OF_SCOPE, answer_text=_OUT_OF_SCOPE_MESSAGE)
@@ -80,7 +91,25 @@ async def _route(
         return AskResponse(session_id="", type=AskResponseType.GENERAL_INFO, answer_text=answer.answer_text)
 
     if classification.scope == AskScope.EDIT_INSTRUCTION:
-        return await handle_edit_instruction(store, db, classification, tenant_id=tenant_id)
+        # Drafting is safe for any role (nothing writes without a separate
+        # reviewer/admin approval) but is rate-limited per user, same as the
+        # Suggest API — see app/core/rate_limit.py. Skipped when user_id is
+        # unavailable (e.g. a direct pipeline call with no authenticated caller).
+        if user_id is not None:
+            try:
+                check_draft_rate_limit(user_id)
+            except DraftRateLimitExceeded as exc:
+                return AskResponse(
+                    session_id="",
+                    type=AskResponseType.RATE_LIMITED,
+                    answer_text=(
+                        f"You're drafting edits too quickly — try again in "
+                        f"{exc.retry_after_seconds}s."
+                    ),
+                )
+        return await handle_edit_instruction(
+            store, db, classification, tenant_id=tenant_id, requested_by_user_id=user_id
+        )
 
     if classification.scope == AskScope.COMPLIANCE_STATUS_QUESTION:
         summary = build_status_summary(
@@ -116,14 +145,18 @@ async def _route(
 
 
 def _get_or_create_session(
-    db: Session, session_id: str | None, tenant_id: str, first_message: str
+    db: Session, session_id: str | None, tenant_id: str, user_id: str | None, first_message: str
 ) -> ChatSession:
     if session_id:
         existing = db.get(ChatSession, session_id)
         if existing is not None:
+            if existing.tenant_id != tenant_id or existing.user_id != user_id:
+                raise ChatSessionAccessError(
+                    f"Chat session {session_id!r} does not belong to this user."
+                )
             return existing
     title = (first_message[:60] + "…") if len(first_message) > 60 else first_message
-    session = ChatSession(tenant_id=tenant_id, title=title or "New conversation")
+    session = ChatSession(tenant_id=tenant_id, user_id=user_id, title=title or "New conversation")
     db.add(session)
     db.commit()
     db.refresh(session)
