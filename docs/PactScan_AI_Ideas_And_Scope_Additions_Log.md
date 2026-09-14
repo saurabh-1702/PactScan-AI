@@ -90,3 +90,14 @@ and `Notification` gaining `kind` (`new_finding` broadcast tenant-wide vs.
 `approval_decided` addressed to one `recipient_user_id`) plus `document_version_id`.
 Not in any phase prompt — this whole notification-addressing model (broadcast vs.
 targeted) didn't exist before this idea prompted it.
+
+## Phase 6 — Horizon-Scanning & Restore
+
+**Closing the loop for Restore requests too, matching Phase 5's pattern exactly.**
+The Phase 6 prompt says nothing about notifying a restore requester once their
+request is decided. Added on request, mirroring the Phase 5 "close the loop"
+feature built for Suggest drafts: `notify_restore_decision()` addresses a
+notification to whoever requested the restore — a rejection carries the
+reviewer's note, an approval carries a direct download link to the new
+version. The user's ask, once told the Suggest-side version existed: extend
+the same idea to Restore, for consistency.

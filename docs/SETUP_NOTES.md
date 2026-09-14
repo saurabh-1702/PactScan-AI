@@ -559,3 +559,39 @@ tenant-broadcast, with nothing addressed to a specific requester.
   note was always `undefined`. Added a reveal-a-textarea-before-confirming
   flow (mirroring the existing "Edit" button's pattern) so a reviewer
   actually writes something before rejecting.
+
+---
+
+## Phase 6
+
+### Horizon-Scanning must be additive, never `replace_findings`
+
+The single most important correctness decision this phase: `GraphStore.replace_findings()` (used by Detect since Phase 1) `DETACH DELETE`s every existing `Finding` node for a contract before writing new ones — it's a full replace, not a merge. If Horizon-Scanning had called it, re-scanning an already-reviewed contract against a new regulation clause would have silently wiped out every finding Detect originally raised on that contract. Added a new, additive `GraphStore.add_findings()` instead — it diffs against already-existing `finding_id`s and only writes genuinely new ones, returning just those new ones so the caller knows what to notify about. This also makes re-running the exact same simulated update idempotent (a real concern: an admin could plausibly click "simulate" twice).
+
+### Reusing Detect's own finding-creation logic, not duplicating it
+
+Per the phase prompt's explicit instruction, `detect_agent.py`'s `_finding_from` helper (renamed `build_finding_from_nli`, dropped its leading underscore) and `_finding_id` (renamed `finding_id`) are now imported directly into `app/agents/horizon_scanning/rediff.py`. A Horizon-Scanning finding and a Detect finding are therefore structurally identical rows in storage — same fields, same severity rule (`HIGH` for any `regulation`-kind finding, matching Detect's own convention for both `CONTRADICTS` and a mandatory-gap `NEUTRAL`), same deterministic id derivation. `notify_new_findings` (Phase 5) is called unmodified — Horizon-Scanning findings ride the exact same notification path as Detect findings, including HIGH-severity email.
+
+### No new embedding storage needed for `RegulationClause`
+
+`generate_embedding()` already works on arbitrary text, so a newly-added regulation clause's embedding is computed on the fly at re-diff time rather than persisted on the `RegulationClause` node. Simpler, and avoids extending the Neo4j vector index (which is built on `:Clause.embedding` only) to a second node label.
+
+### `add_regulation_update`'s signature matches the phase prompt exactly — no `section` parameter
+
+The prompt's literal signature is `add_regulation_update(regulation_name, new_clause_text, effective_date)` — no `section`, even though every seeded `RegulationClause` has one (`"Section 9"`, `"Article 8"`, etc.). Rather than adding an unrequested field to the public API, `section` is derived internally as `f"Amendment effective {effective_date}"` so the resulting clause still has a coherent, displayable section label without expanding the request contract beyond what was asked for.
+
+### Restore needed its own table, not a reuse of `Approval`/`RedlineSuggestion`
+
+`Approval.redline_suggestion_id` is a hard foreign key to `redline_suggestions.id`, and `RedlineSuggestion` carries fields (`proposed_text`, `rationale`, `contrarian_json`, `judge_json`, `negotiation_json`) that describe an AI-drafted redline — none of which fit "revert to version N." Built the parallel `restore_requests` table + `POST /api/restore-requests/{id}/decide` endpoint the phase prompt itself suggested as the alternative, mirroring `Approval`'s shape (`status`, `reviewer_note`, `decided_at`) but with its own restore-specific fields (`target_version_id`, `abuse_flagged`). A new `app/agents/restore/executor.py` is the restore-equivalent of `fix_and_learn/executor.py` — same one-entry-point rule, but simpler: no text edit at all, just `shutil.copy2` of the target version's file forward as a brand-new version number, so the full history is never shortened (restoring v2 while at v5 produces a new v6, not an overwrite of anything).
+
+### Closing the loop for Restore too (beyond the literal prompt)
+
+Per the same pattern Phase 5 established for Suggest drafts (see `docs/PactScan_AI_Ideas_And_Scope_Additions_Log.md`), a restore requester now gets a targeted notification when their request is decided — `notify_restore_decision()` mirrors `notify_approval_decision()`: rejected carries the reviewer's note, approved carries a direct download link to the new version. Not asked for by the literal Phase 6 prompt; added on request for consistency once the feature was pointed out as a natural extension of the existing pattern.
+
+### A missing `admin` seed account, found before it could block manual testing
+
+Horizon-Scanning's trigger endpoint is `require_role(["admin"])`-gated, but Phase 5's seeded demo accounts only covered `end_user` and `reviewer` — there was no way to manually test this endpoint at all without first registering an admin account by hand. Added a third seeded demo account, `admin@demo.pactscan.ai` (same password as the other two), to `app/db/seed_auth.py`.
+
+### New frontend page: `/contracts/[id]`
+
+Neither Part A ("link to each affected contract's findings") nor Part B ("list all versions on the contract detail page, offer Request Restore") had anywhere to live in the existing frontend — there was no contract-detail route at all before this phase; document-version listing was previously only ever embedded inline inside `/approvals`, showing just the single latest version. One new page serves both needs: current findings (via the existing `GET /api/detect/{contract_id}`) plus full version history with a Request Restore action on every non-current version.

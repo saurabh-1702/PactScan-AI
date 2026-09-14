@@ -78,7 +78,10 @@ _NLI_SYSTEM_PROMPT = (
 )
 
 
-def _finding_id(contract_id: str, clause_id: str, rule_id: str) -> str:
+def finding_id(contract_id: str, clause_id: str, rule_id: str) -> str:
+    """Deterministic/idempotent finding id — exported so Horizon-Scanning
+    (app/agents/horizon_scanning/rediff.py) mints ids the same way Detect
+    does, keeping the two finding sources indistinguishable in storage."""
     h = hashlib.sha1(f"{contract_id}|{clause_id}|{rule_id}".encode()).hexdigest()
     return f"fnd_{h[:12]}"
 
@@ -141,7 +144,7 @@ async def run_detect(
             scopes = ", ".join(sorted({o["scope"] for o in overriders if o.get("scope")}))
             findings.append(
                 Finding(
-                    finding_id=_finding_id(contract_id, clause.clause_id, "pb_liability_cap_data_breach:override"),
+                    finding_id=finding_id(contract_id, clause.clause_id, "pb_liability_cap_data_breach:override"),
                     clause_id=clause.clause_id,
                     clause_type=clause.clause_type,
                     page_number=clause.page_number,
@@ -188,7 +191,7 @@ async def run_detect(
 
             if item.label == NLILabel.CONTRADICTS:
                 findings.append(
-                    _finding_from(contract_id, clause, override_chain, item, req_id, label, kind)
+                    build_finding_from_nli(contract_id, clause, override_chain, item, req_id, label, kind)
                 )
                 edges.append(
                     (clause.clause_id, "VIOLATES" if kind == "regulation" else "CONTRADICTS", req_id)
@@ -211,7 +214,7 @@ async def run_detect(
         severity = Severity.HIGH if kind == "regulation" else Severity.MEDIUM
         findings.append(
             Finding(
-                finding_id=_finding_id(contract_id, clause.clause_id, req_id),
+                finding_id=finding_id(contract_id, clause.clause_id, req_id),
                 clause_id=clause.clause_id,
                 clause_type=clause.clause_type,
                 page_number=clause.page_number,
@@ -244,7 +247,7 @@ async def run_detect(
     return result
 
 
-def _finding_from(
+def build_finding_from_nli(
     contract_id: str,
     clause: ExtractedClause,
     override_chain: list[str],
@@ -255,7 +258,7 @@ def _finding_from(
 ) -> Finding:
     severity = Severity.HIGH if kind == "regulation" else Severity.MEDIUM
     return Finding(
-        finding_id=_finding_id(contract_id, clause.clause_id, rule_id),
+        finding_id=finding_id(contract_id, clause.clause_id, rule_id),
         clause_id=clause.clause_id,
         clause_type=clause.clause_type,
         page_number=clause.page_number,

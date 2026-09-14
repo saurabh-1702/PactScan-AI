@@ -111,6 +111,16 @@ class Settings(BaseSettings):
     draft_rate_limit_max: int = 10
     draft_rate_limit_window_seconds: int = 600
 
+    # --- Horizon-Scanning (Phase 6) ---
+    # Same "not verified against a live key at build time" caveat as Ask's
+    # ask_similarity_threshold — tune if live testing shows over-/under-flagging.
+    horizon_scan_top_k: int = 15
+    horizon_scan_similarity_threshold: float = 0.35
+
+    # --- Restore abuse-flagging (Phase 6) ---
+    restore_abuse_window_days: int = 30
+    restore_abuse_threshold: int = 2
+
     # --- App ---
     environment: str = "development"
 

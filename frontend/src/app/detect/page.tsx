@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import {
   postDetect,
@@ -97,9 +98,12 @@ export default function DetectPage() {
               {report.total_findings} finding
               {report.total_findings === 1 ? "" : "s"}
             </h2>
-            <span className="text-xs text-neutral-400">
-              contract {report.contract_id}
-            </span>
+            <Link
+              href={`/contracts/${report.contract_id}`}
+              className="text-xs font-semibold text-sky-700 underline"
+            >
+              contract {report.contract_id} — version history →
+            </Link>
           </div>
 
           {report.total_findings === 0 ? (

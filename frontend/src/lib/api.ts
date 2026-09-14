@@ -86,6 +86,11 @@ export async function postDetect(file: File): Promise<DetectReport> {
   return handleJson<DetectReport>(res);
 }
 
+export async function getDetectReport(contractId: string): Promise<DetectReport> {
+  const res = await authFetch(`/api/detect/${contractId}`);
+  return handleJson<DetectReport>(res);
+}
+
 // --- Suggest (Phase 2) ------------------------------------------------
 
 export interface ContrarianArgument {
@@ -327,4 +332,84 @@ export async function getDashboardOverview(): Promise<DashboardOverview> {
 export async function getFindingsPipeline(): Promise<FindingsPipeline> {
   const res = await authFetch("/api/dashboard/findings-pipeline");
   return handleJson<FindingsPipeline>(res);
+}
+
+// --- Horizon-Scanning (Phase 6, admin-only) --------------------------------
+
+export interface AffectedContract {
+  contract_id: string;
+  filename: string;
+  new_finding_ids: string[];
+}
+
+export interface SimulateUpdateResult {
+  regulation_clause_id: string;
+  contracts_flagged: number;
+  findings_created: number;
+  details: AffectedContract[];
+}
+
+export async function postSimulateRegulationUpdate(
+  regulationName: string,
+  newClauseText: string,
+  effectiveDate: string,
+): Promise<SimulateUpdateResult> {
+  const res = await authFetch("/api/horizon-scanning/simulate-update", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      regulation_name: regulationName,
+      new_clause_text: newClauseText,
+      effective_date: effectiveDate,
+    }),
+  });
+  return handleJson<SimulateUpdateResult>(res);
+}
+
+// --- Document Restore (Phase 6) --------------------------------------------
+
+export interface RestoreRequestInfo {
+  id: string;
+  contract_id: string;
+  target_version_id: string;
+  target_version_number: number;
+  requested_by_user_id: string;
+  reason: string;
+  status: "pending" | "approved" | "rejected";
+  reviewer_note: string | null;
+  abuse_flagged: boolean;
+  decided_at: string | null;
+  created_at: string;
+}
+
+export async function createRestoreRequest(
+  contractId: string,
+  targetVersionId: string,
+  reason: string,
+): Promise<RestoreRequestInfo> {
+  const res = await authFetch("/api/restore-requests", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ contract_id: contractId, target_version_id: targetVersionId, reason }),
+  });
+  return handleJson<RestoreRequestInfo>(res);
+}
+
+export async function getRestoreRequests(status?: string): Promise<RestoreRequestInfo[]> {
+  const qs = status ? `?status=${status}` : "";
+  const res = await authFetch(`/api/restore-requests${qs}`);
+  return handleJson<RestoreRequestInfo[]>(res);
+}
+
+export async function decideRestoreRequest(
+  id: string,
+  decision: "approved" | "rejected",
+  note?: string,
+): Promise<RestoreRequestInfo> {
+  const res = await authFetch(`/api/restore-requests/${id}/decide`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ decision, note: note ?? null }),
+  });
+  return handleJson<RestoreRequestInfo>(res);
 }

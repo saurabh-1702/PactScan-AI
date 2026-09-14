@@ -14,6 +14,39 @@ This folder holds the project specification and the phase-by-phase build plan.
 
 ## Current status
 
+**Phase 6 built — Horizon-Scanning (simulated) + Document Restore.** Demonstrates the
+project's strongest differentiator: an already-signed, already-reviewed contract gets
+re-flagged automatically when a *new* regulation clause lands, without anyone
+re-uploading anything. Honesty note (also shown in the UI itself, per the phase's own
+requirement): real 24/7 monitoring against government regulatory feeds is out of
+scope — this is the mechanism a real scheduler would call, triggered manually here via
+an admin-only endpoint/button instead.
+
+- **Horizon-Scanning**: `POST /api/horizon-scanning/simulate-update` (admin-only) adds
+  a new `RegulationClause`, then re-diffs it against every clause across every contract
+  in the tenant — reusing Phase 2's portfolio-wide vector search and Phase 1's own
+  NLI-check + finding-creation helper (`build_finding_from_nli`), so a Horizon-Scanning
+  finding is structurally identical to a Detect finding and fires the exact same
+  notification hook. Additive by design — a new `GraphStore.add_findings()` (unlike
+  `replace_findings`, which would have wiped a contract's original findings) means a
+  contract's Detect-era findings are never lost when a later regulation update re-diffs it.
+- **Document Restore**: `POST /api/restore-requests` (any role, requires a non-empty
+  `reason`) + `POST /api/restore-requests/{id}/decide` (`reviewer`/`admin` only, the
+  same gate as redline approvals) — approving copies the target version's file forward
+  as a brand-new version, never shortening the history. An abuse-flag (2+ approved
+  restores on one contract within 30 days) surfaces as a warning banner in the approval
+  queue without blocking anything. The requester gets notified either way, matching
+  Phase 5's "close the loop" pattern (see the Ideas & Scope Additions log).
+- New: `backend/app/agents/horizon_scanning/`, `backend/app/agents/restore/`,
+  `restore_requests` Postgres table, `RegulationClause.effective_date`, a new
+  `/contracts/[id]` frontend page (version history + Request Restore — didn't exist
+  before this phase), `/admin/horizon-scanning` admin trigger page, and a third seeded
+  demo account (`admin@demo.pactscan.ai`) since nothing before this phase needed one.
+- Tests: 70 mocked pass (9 new, incl. additivity, idempotency, the same-notification-path
+  check, empty-reason rejection, the end_user-403/reviewer-200 exit-criteria test, version-
+  history-preserved-on-restore, and both abuse-flagging edge cases); not yet run live or
+  manually tested — pending before merge to `develop`.
+
 **Phase 5 complete and merged to `develop` — Login, role-based dashboard, real-time notifications.** Real
 email/password auth (bcrypt + JWT, no SSO — a deliberate simplification per
 the phase prompt) replaces the hardcoded `tenant_id = "demo_tenant"` used
@@ -36,9 +69,11 @@ gracefully with no key configured).
   docker compose up -d
   ```
 - **Demo accounts** (seeded automatically at backend startup, under
-  `tenant_id = "demo_tenant"`): `enduser@demo.pactscan.ai` (role `end_user`)
-  and `reviewer@demo.pactscan.ai` (role `reviewer`), both with password
-  `PactScanDemo123!`. Register additional accounts via `POST /api/auth/register`.
+  `tenant_id = "demo_tenant"`): `enduser@demo.pactscan.ai` (role `end_user`),
+  `reviewer@demo.pactscan.ai` (role `reviewer`), and `admin@demo.pactscan.ai`
+  (role `admin`, added Phase 6 for Horizon-Scanning's admin-only trigger),
+  all with password `PactScanDemo123!`. Register additional accounts via
+  `POST /api/auth/register`.
 - `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/notifications`,
   `POST /api/notifications/{id}/mark-read`, `GET /api/dashboard/overview`,
   `GET /api/dashboard/findings-pipeline`

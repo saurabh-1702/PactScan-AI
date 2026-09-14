@@ -17,7 +17,7 @@ import logging
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.db.models import Notification, RedlineSuggestion, User
+from app.db.models import Notification, RedlineSuggestion, RestoreRequest, User
 from app.models.clause import Finding
 
 logger = logging.getLogger("pactscan.notifications")
@@ -102,6 +102,45 @@ def notify_approval_decision(
             tenant_id=suggestion.tenant_id,
             recipient_user_id=suggestion.requested_by_user_id,
             finding_id=suggestion.finding_id,
+            severity=None,
+            message=message,
+            document_version_id=version_id,
+        )
+    )
+    db.commit()
+
+
+def notify_restore_decision(
+    db: Session,
+    request: RestoreRequest,
+    decision: str,
+    reviewer_note: str | None,
+    new_version_id: str | None,
+    decided_by_user_id: str | None,
+) -> None:
+    """Closes the loop back to whoever requested a restore, mirroring
+    ``notify_approval_decision`` above. Skipped if the requester is the
+    person who decided it."""
+    if request.requested_by_user_id == decided_by_user_id:
+        return
+
+    if decision == "rejected":
+        reason = reviewer_note or "No reason was given."
+        message = f"Your restore request for contract {request.contract_id} was rejected. Reviewer's note: {reason}"
+        version_id = None
+    else:
+        message = (
+            f"Your restore request for contract {request.contract_id} was approved. "
+            "A new document version is available."
+        )
+        version_id = new_version_id
+
+    db.add(
+        Notification(
+            kind="approval_decided",
+            tenant_id=request.tenant_id,
+            recipient_user_id=request.requested_by_user_id,
+            finding_id=None,
             severity=None,
             message=message,
             document_version_id=version_id,

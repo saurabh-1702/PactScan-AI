@@ -1,10 +1,10 @@
 """Idempotent startup seeding for Phase 5's tenant/user tables — same pattern
 as app.agents.detect.seed_data.seed() for the Neo4j playbook/regulations.
 
-Seeds the one tenant every prior phase hardcoded (DEMO_TENANT) plus two demo
-accounts so role-gating can be demonstrated immediately without a manual
-POST /api/auth/register round-trip. Credentials are documented in
-docs/README.md.
+Seeds the one tenant every prior phase hardcoded (DEMO_TENANT) plus demo
+accounts for all three roles so role-gating can be demonstrated immediately
+without a manual POST /api/auth/register round-trip. Credentials are
+documented in docs/README.md.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ logger = logging.getLogger("pactscan.db.seed_auth")
 
 DEMO_END_USER_EMAIL = "enduser@demo.pactscan.ai"
 DEMO_REVIEWER_EMAIL = "reviewer@demo.pactscan.ai"
+DEMO_ADMIN_EMAIL = "admin@demo.pactscan.ai"
 DEMO_PASSWORD = "PactScanDemo123!"
 
 
@@ -32,6 +33,9 @@ def seed_demo_tenant_and_users(db: Session) -> None:
 
     _seed_user(db, DEMO_END_USER_EMAIL, "end_user")
     _seed_user(db, DEMO_REVIEWER_EMAIL, "reviewer")
+    # Added Phase 6 — Horizon-Scanning's trigger endpoint is admin-only, and
+    # no seeded account could reach it before this.
+    _seed_user(db, DEMO_ADMIN_EMAIL, "admin")
 
 
 def _seed_user(db: Session, email: str, role: str) -> None:

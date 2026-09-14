@@ -230,3 +230,33 @@ class ChatMessage(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
+
+
+class RestoreRequest(Base):
+    """Phase 6 — a client's request to revert a document to a prior version,
+    gated by the exact same reviewer/admin approval requirement as any other
+    edit (require_role(["reviewer", "admin"]) on the decide endpoint), just
+    via a parallel table/endpoint rather than reusing Approval/RedlineSuggestion
+    — those are hard-wired to an AI-drafted redline (proposed_text, rationale,
+    contrarian/judge/negotiation JSON), none of which fit "restore to version
+    N", and Approval.redline_suggestion_id is a hard FK that can't point
+    anywhere else."""
+
+    __tablename__ = "restore_requests"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: f"rr_{uuid.uuid4().hex[:16]}")
+    tenant_id: Mapped[str] = mapped_column(String(40), index=True, default=DEMO_TENANT)
+    contract_id: Mapped[str] = mapped_column(String(40), index=True)
+    target_version_id: Mapped[str] = mapped_column(String(40), ForeignKey("document_versions.id"))
+    requested_by_user_id: Mapped[str] = mapped_column(String(40), index=True)
+    reason: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    reviewer_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Set at request-creation time by app/agents/restore/abuse_check.py — 2+
+    # already-approved restores for this contract within the flagging window.
+    # Never blocks; only surfaces a warning banner in the approval queue.
+    abuse_flagged: Mapped[bool] = mapped_column(Boolean, default=False)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )

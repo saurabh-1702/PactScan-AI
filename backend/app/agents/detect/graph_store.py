@@ -25,6 +25,7 @@ Node / relationship schema:
 from __future__ import annotations
 
 import abc
+import uuid
 from collections import deque
 from datetime import datetime, timezone
 from typing import Any
@@ -65,6 +66,20 @@ class GraphStore(abc.ABC):
     @abc.abstractmethod
     def get_regulation_clauses(self) -> list[dict]: ...
 
+    @abc.abstractmethod
+    def add_regulation_update(
+        self, regulation_name: str, new_clause_text: str, effective_date: str
+    ) -> dict:
+        """Phase 6 Horizon-Scanning: inserts a new RegulationClause representing
+        an amendment/new rule under an existing regulation (DPDP or GDPR) —
+        distinct from ``seed_regulation_clauses``, which is for the fixed
+        startup seed set. Matches the phase prompt's literal signature (no
+        ``section`` param); ``section`` is derived from ``effective_date`` so
+        the returned clause still has one, consistent with every seeded
+        RegulationClause. Returns the created clause dict: {id,
+        regulation_name, section, text, effective_date}. Global, like every
+        other RegulationClause — not tenant-scoped."""
+
     # --- contract / clause writes ---------------------------------------
     @abc.abstractmethod
     def upsert_contract(
@@ -100,6 +115,19 @@ class GraphStore(abc.ABC):
     def replace_findings(
         self, contract_id: str, findings: list[Finding], tenant_id: str = DEMO_TENANT
     ) -> None: ...
+
+    @abc.abstractmethod
+    def add_findings(
+        self, contract_id: str, findings: list[Finding], tenant_id: str = DEMO_TENANT
+    ) -> list[Finding]:
+        """Additive, unlike ``replace_findings`` — which DETACH DELETEs every
+        existing Finding for the contract first. Horizon-Scanning (Phase 6)
+        must never call ``replace_findings``: a contract that was already
+        Detect-scanned would silently lose its original findings the moment
+        a later regulation update re-diffed it. MERGEs by finding_id (so a
+        re-run of the same simulated update is idempotent) and returns only
+        the findings that were newly created (already-existing ones, by id,
+        are skipped) — the caller uses this to know what to notify about."""
 
     @abc.abstractmethod
     def get_findings(
@@ -233,6 +261,18 @@ class InMemoryGraphStore(GraphStore):
     def get_regulation_clauses(self):
         return list(self.regulations.values())
 
+    def add_regulation_update(self, regulation_name, new_clause_text, effective_date):
+        new_id = f"reg_{uuid.uuid4().hex[:12]}"
+        clause = {
+            "id": new_id,
+            "regulation_name": regulation_name,
+            "section": f"Amendment effective {effective_date}",
+            "text": new_clause_text,
+            "effective_date": effective_date,
+        }
+        self.regulations[new_id] = clause
+        return clause
+
     def upsert_contract(self, contract_id, filename, tenant_id=DEMO_TENANT):
         self.contracts[(tenant_id, contract_id)] = {
             "id": contract_id,
@@ -297,6 +337,13 @@ class InMemoryGraphStore(GraphStore):
 
     def replace_findings(self, contract_id, findings, tenant_id=DEMO_TENANT):
         self.findings[(tenant_id, contract_id)] = list(findings)
+
+    def add_findings(self, contract_id, findings, tenant_id=DEMO_TENANT):
+        existing = self.findings.setdefault((tenant_id, contract_id), [])
+        existing_ids = {f.finding_id for f in existing}
+        new = [f for f in findings if f.finding_id not in existing_ids]
+        existing.extend(new)
+        return new
 
     def get_findings(self, contract_id, tenant_id=DEMO_TENANT):
         return list(self.findings.get((tenant_id, contract_id), []))
@@ -514,8 +561,32 @@ class Neo4jGraphStore(GraphStore):
         return self._run(
             "MATCH (r:RegulationClause) "
             "RETURN r.id AS id, r.regulation_name AS regulation_name, "
-            "r.section AS section, r.text AS text"
+            "r.section AS section, r.text AS text, r.effective_date AS effective_date"
         )
+
+    def add_regulation_update(self, regulation_name, new_clause_text, effective_date):
+        new_id = f"reg_{uuid.uuid4().hex[:12]}"
+        section = f"Amendment effective {effective_date}"
+        self._run(
+            """
+            CREATE (r:RegulationClause {
+                id: $id, regulation_name: $regulation_name, section: $section,
+                text: $text, effective_date: $effective_date
+            })
+            """,
+            id=new_id,
+            regulation_name=regulation_name,
+            section=section,
+            text=new_clause_text,
+            effective_date=effective_date,
+        )
+        return {
+            "id": new_id,
+            "regulation_name": regulation_name,
+            "section": section,
+            "text": new_clause_text,
+            "effective_date": effective_date,
+        }
 
     # --- contract / clause writes ---------------------------------------
     def upsert_contract(self, contract_id, filename, tenant_id=DEMO_TENANT):
@@ -651,6 +722,47 @@ class Neo4jGraphStore(GraphStore):
                 override_chain=f.override_chain,
                 tenant_id=tenant_id,
             )
+
+    def add_findings(self, contract_id, findings, tenant_id=DEMO_TENANT):
+        existing_ids = {
+            r["id"]
+            for r in self._run(
+                "MATCH (c:Contract {id: $contract_id, tenant_id: $tenant_id})-[:HAS_FINDING]->(f:Finding) "
+                "RETURN f.id AS id",
+                contract_id=contract_id,
+                tenant_id=tenant_id,
+            )
+        }
+        new = [f for f in findings if f.finding_id not in existing_ids]
+        for f in new:
+            self._run(
+                """
+                MATCH (c:Contract {id: $contract_id, tenant_id: $tenant_id})
+                MATCH (cl:Clause {id: $clause_id, tenant_id: $tenant_id})
+                CREATE (f:Finding {
+                    id: $finding_id, clause_id: $clause_id, clause_type: $clause_type,
+                    page_number: $page_number, section_header: $section_header,
+                    severity: $severity, rule_or_regulation_violated: $rule,
+                    explanation: $explanation, confidence: $confidence,
+                    override_chain: $override_chain, tenant_id: $tenant_id
+                })
+                CREATE (c)-[:HAS_FINDING]->(f)
+                CREATE (f)-[:ABOUT]->(cl)
+                """,
+                contract_id=contract_id,
+                clause_id=f.clause_id,
+                finding_id=f.finding_id,
+                clause_type=f.clause_type.value,
+                page_number=f.page_number,
+                section_header=f.section_header,
+                severity=f.severity.value,
+                rule=f.rule_or_regulation_violated,
+                explanation=f.explanation,
+                confidence=f.confidence.value,
+                override_chain=f.override_chain,
+                tenant_id=tenant_id,
+            )
+        return new
 
     def get_findings(self, contract_id, tenant_id=DEMO_TENANT):
         rows = self._run(
