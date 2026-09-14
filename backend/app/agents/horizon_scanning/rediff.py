@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 from app.agents.detect.detect_agent import build_finding_from_nli
 from app.agents.detect.graph_store import DEMO_TENANT, GraphStore
 from app.agents.notifications.notify import notify_new_findings
+from app.agents.suggest.embed_clauses import backfill_all
 from app.config import settings
 from app.llm import client as llm
 from app.models.clause import Finding, NLILabel, NLIResult
@@ -65,6 +66,13 @@ async def rediff_regulation_update(
 ) -> dict:
     """Returns a summary: {contracts_flagged, findings_created, details:
     [{contract_id, filename, new_finding_ids}]}."""
+    # Detect never embeds a contract's clauses itself — embedding is lazy,
+    # only ever triggered by Suggest/Ask so far. A contract Detect-scanned
+    # but never touched by either would have zero embedded clauses and thus
+    # zero vector-index hits, no matter how relevant the new regulation
+    # clause actually is. Same fix Ask's portfolio-question path already
+    # needed (app/agents/ask/ask_retriever.py) for the identical reason.
+    await backfill_all(store, tenant_id=tenant_id)
     embedding = await llm.generate_embedding(new_clause["text"])
     hits = store.vector_search_similar_clauses(
         embedding, tenant_id=tenant_id, top_k=settings.horizon_scan_top_k, contract_id=None
