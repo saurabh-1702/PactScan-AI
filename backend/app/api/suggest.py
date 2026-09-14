@@ -43,7 +43,13 @@ async def suggest_from_finding_endpoint(
     current_user: CurrentUser = Depends(enforce_draft_rate_limit),
 ) -> SuggestResult:
     try:
-        return await suggest_from_finding(store, db, finding_id, tenant_id=current_user.tenant_id)
+        return await suggest_from_finding(
+            store,
+            db,
+            finding_id,
+            tenant_id=current_user.tenant_id,
+            requested_by_user_id=current_user.user_id,
+        )
     except SuggestInputError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RuntimeError as exc:
@@ -66,6 +72,7 @@ async def suggest_standalone_endpoint(
             body.clause_id,
             body.change_request,
             tenant_id=current_user.tenant_id,
+            requested_by_user_id=current_user.user_id,
         )
     except SuggestInputError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

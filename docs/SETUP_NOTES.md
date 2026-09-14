@@ -524,3 +524,38 @@ and reusing an existing `session_id` on a new `POST /api/ask` — by
 `(tenant_id, user_id)` together, not tenant alone. A `session_id` that exists
 but belongs to someone else now 404s rather than being silently replayed or
 silently hijacked into a new conversation.
+
+### Closing the loop: requester-targeted decision notifications
+
+Added on request, after Phase 5's core build: previously, once a reviewer
+decided a pending approval, the person who originally requested that draft
+(via Suggest or Ask's edit-instruction handoff) had no way to find out what
+happened to it — approvals/notifications were either reviewer-only UI or
+tenant-broadcast, with nothing addressed to a specific requester.
+
+- `RedlineSuggestion.requested_by_user_id` (nullable) tracks who asked for
+  each draft, set from the JWT at the two creation points
+  (`/api/suggest/from-finding/{id}`, `/api/suggest/standalone`) and Ask's
+  edit-instruction handoff. Nullable so pre-existing drafts, or ones from a
+  direct pipeline call with no authenticated caller, simply skip the
+  decision notification rather than guessing a recipient.
+- `Notification` gained `kind` (`new_finding` broadcast tenant-wide, vs.
+  `approval_decided` addressed to one `recipient_user_id`) and
+  `document_version_id` (set on any 'approved' outcome, so the requester can
+  download the new version directly from the bell — the download endpoint
+  is tenant-scoped, not role-scoped, so this works for an end_user too,
+  without needing access to `/approvals`).
+- Three distinct outcomes, in `app/agents/notifications/notify.py::notify_approval_decision`:
+  rejected (with the reviewer's note), approved-as-drafted, and
+  approved-but-reviewer-edited (a different message, since the requester's
+  exact wording wasn't the one that shipped) — determined by comparing
+  `Approval.edited_text` against the original `proposed_text`.
+- Skipped if the requester is the same person who decided it — no point
+  notifying a reviewer about their own decision on their own draft.
+- **Found while wiring this up**: the frontend's "Reject" button never
+  actually collected a reason at all, even though the backend's
+  `DecideRequest.note` field already existed and was already displayed back
+  to the reviewer afterward (`Note: {reviewer_note}` on a decided item). The
+  note was always `undefined`. Added a reveal-a-textarea-before-confirming
+  flow (mirroring the existing "Edit" button's pattern) so a reviewer
+  actually writes something before rejecting.

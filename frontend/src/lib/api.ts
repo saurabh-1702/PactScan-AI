@@ -273,11 +273,15 @@ export async function getChatMessages(sessionId: string): Promise<ChatMessageInf
 
 // --- Notifications (Phase 5) ---------------------------------------------
 
+export type NotificationKind = "new_finding" | "approval_decided";
+
 export interface NotificationInfo {
   id: string;
-  finding_id: string;
-  severity: Severity;
+  kind: NotificationKind;
+  finding_id: string | null;
+  severity: Severity | null;
   message: string;
+  document_version_id: string | null;
   is_read: boolean;
   created_at: string;
 }

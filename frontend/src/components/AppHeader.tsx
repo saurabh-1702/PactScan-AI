@@ -3,7 +3,12 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { getNotifications, markNotificationRead, type NotificationInfo } from "@/lib/api";
+import {
+  downloadDocumentVersion,
+  getNotifications,
+  markNotificationRead,
+  type NotificationInfo,
+} from "@/lib/api";
 import { clearToken, getCurrentUser } from "@/lib/auth";
 
 const POLL_MS = 7000;
@@ -75,6 +80,25 @@ export default function AppHeader() {
     router.push("/login");
   }
 
+  async function onDownload(e: React.MouseEvent, versionId: string) {
+    e.stopPropagation(); // don't also trigger the row's mark-read/select handler
+    try {
+      await downloadDocumentVersion(versionId, `${versionId}.docx`);
+    } catch {
+      /* non-fatal — the document is still reachable from /approvals if a
+         reviewer/admin, or the reviewer can be asked to re-share it */
+    }
+  }
+
+  function dotColor(n: NotificationInfo): string {
+    if (n.kind === "approval_decided") {
+      return n.message.includes("rejected") ? "bg-red-500" : "bg-emerald-500";
+    }
+    if (n.severity === "HIGH") return "bg-red-500";
+    if (n.severity === "MEDIUM") return "bg-amber-500";
+    return "bg-sky-500";
+  }
+
   return (
     <header className="flex items-center justify-between border-b border-neutral-200 bg-white px-6 py-3">
       <div className="flex items-center gap-6">
@@ -128,18 +152,21 @@ export default function AppHeader() {
                       n.is_read ? "text-neutral-500" : "font-medium text-neutral-900"
                     }`}
                   >
-                    <span
-                      className={`mr-1.5 inline-block h-1.5 w-1.5 rounded-full ${
-                        n.severity === "HIGH"
-                          ? "bg-red-500"
-                          : n.severity === "MEDIUM"
-                            ? "bg-amber-500"
-                            : "bg-sky-500"
-                      }`}
-                    />
+                    <span className={`mr-1.5 inline-block h-1.5 w-1.5 rounded-full ${dotColor(n)}`} />
                     {n.message}
-                    <div className="mt-0.5 text-[10px] text-neutral-400">
-                      {new Date(n.created_at).toLocaleString()}
+                    <div className="mt-1 flex items-center justify-between">
+                      <span className="text-[10px] text-neutral-400">
+                        {new Date(n.created_at).toLocaleString()}
+                      </span>
+                      {n.document_version_id && (
+                        <button
+                          type="button"
+                          onClick={(e) => onDownload(e, n.document_version_id!)}
+                          className="text-[11px] font-semibold text-sky-700 underline"
+                        >
+                          Download
+                        </button>
+                      )}
                     </div>
                   </li>
                 ))}

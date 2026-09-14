@@ -107,7 +107,9 @@ async def _route(
                         f"{exc.retry_after_seconds}s."
                     ),
                 )
-        return await handle_edit_instruction(store, db, classification, tenant_id=tenant_id)
+        return await handle_edit_instruction(
+            store, db, classification, tenant_id=tenant_id, requested_by_user_id=user_id
+        )
 
     if classification.scope == AskScope.COMPLIANCE_STATUS_QUESTION:
         summary = build_status_summary(

@@ -26,6 +26,7 @@ async def handle_edit_instruction(
     db: Session,
     classification: ScopeClassification,
     tenant_id: str = DEMO_TENANT,
+    requested_by_user_id: str | None = None,
 ) -> AskResponse:
     name = classification.mentioned_document_name
     match = find_contract_by_name(store, name or "", tenant_id=tenant_id) if name else None
@@ -61,7 +62,13 @@ async def handle_edit_instruction(
 
     try:
         result = await suggest_standalone(
-            store, db, contract_id, clause_id, change_request, tenant_id=tenant_id
+            store,
+            db,
+            contract_id,
+            clause_id,
+            change_request,
+            tenant_id=tenant_id,
+            requested_by_user_id=requested_by_user_id,
         )
     except SuggestInputError as exc:
         return AskResponse(session_id="", type=AskResponseType.ABSTAINED, answer_text=str(exc))

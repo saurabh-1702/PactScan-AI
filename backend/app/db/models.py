@@ -29,6 +29,12 @@ class RedlineSuggestion(Base):
     # impossible. Defaults to DEMO_TENANT so any pre-Phase-5 row a fresh
     # create_all() happens to see still has a valid value.
     tenant_id: Mapped[str] = mapped_column(String(40), index=True, default=DEMO_TENANT)
+    # Who asked for this draft — end_user and reviewer/admin alike may draft
+    # (see app/core/rate_limit.py's design note). Nullable: a suggestion
+    # drafted before this column existed, or via a direct pipeline call with
+    # no authenticated caller, has no traceable requester, and the decision
+    # notification is simply skipped for those.
+    requested_by_user_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     finding_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     contract_id: Mapped[str] = mapped_column(String(40), index=True)
     clause_id: Mapped[str] = mapped_column(String(40), index=True)
@@ -151,17 +157,35 @@ class User(Base):
 
 
 class Notification(Base):
-    """Fired once per new finding (see app/agents/notifications/notify.py),
-    right after Detect writes it to the graph. In-app only by default;
-    HIGH severity additionally attempts a best-effort email via Resend."""
+    """Two kinds, distinguished by ``kind``:
+
+    - ``new_finding`` — fired once per new Finding (see
+      app/agents/notifications/notify.py), right after Detect writes it to
+      the graph. Broadcast tenant-wide (``recipient_user_id`` is None) since
+      any reviewer/admin/end_user may care that a new issue was found.
+      HIGH severity additionally attempts a best-effort email via Resend.
+    - ``approval_decided`` — fired once a reviewer/admin decides a pending
+      approval (see app/api/approvals.py), addressed to the specific user
+      who requested that draft (``recipient_user_id`` set,
+      ``RedlineSuggestion.requested_by_user_id``) — skipped entirely if that
+      draft has no traceable requester. Carries ``document_version_id`` when
+      the decision produced a downloadable document (i.e. any 'approved'
+      outcome), so the requester can download it straight from the bell
+      without needing access to /approvals.
+    """
 
     __tablename__ = "notifications"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: f"ntf_{uuid.uuid4().hex[:16]}")
+    kind: Mapped[str] = mapped_column(String(30), default="new_finding")
     tenant_id: Mapped[str] = mapped_column(String(40), index=True)
-    finding_id: Mapped[str] = mapped_column(String(40), index=True)
-    severity: Mapped[str] = mapped_column(String(10))
+    # None = broadcast to every user in the tenant (all new_finding rows);
+    # set = addressed to exactly one user (all approval_decided rows).
+    recipient_user_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    finding_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    severity: Mapped[str | None] = mapped_column(String(10), nullable=True)
     message: Mapped[str] = mapped_column(Text)
+    document_version_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     is_read: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)

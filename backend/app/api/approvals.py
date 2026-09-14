@@ -28,6 +28,7 @@ from app.agents.fix_and_learn.executor import (
     apply_approved_redline,
 )
 from app.agents.fix_and_learn.playbook_feedback import record_accepted_redline
+from app.agents.notifications.notify import notify_approval_decision
 from app.api.deps import CurrentUser, get_current_user, require_role
 from app.db.models import Approval, AuditLog, RedlineSuggestion
 from app.db.postgres_client import get_db
@@ -154,11 +155,20 @@ def decide_approval(
     db.refresh(approval)
 
     if body.decision == "rejected":
+        notify_approval_decision(
+            db,
+            suggestion,
+            decision="rejected",
+            reviewer_note=body.note,
+            edited_text=None,
+            document_version_id=None,
+            decided_by_user_id=current_user.user_id,
+        )
         return _to_out(approval, suggestion, store, current_user.tenant_id)
 
     # approved -> call the Executor (and only the Executor, and only here)
     try:
-        apply_approved_redline(db, store, approval.id, tenant_id=current_user.tenant_id)
+        new_version = apply_approved_redline(db, store, approval.id, tenant_id=current_user.tenant_id)
     except ExecutorNotAuthorizedError as exc:
         # should be unreachable given the pending-check above; fail loudly if it ever happens
         logger.error("Executor authorization guard tripped unexpectedly: %s", exc)
@@ -175,6 +185,16 @@ def decide_approval(
             clause_type=clause.clause_type.value,
             accepted_text=approval.edited_text or suggestion.proposed_text,
         )
+
+    notify_approval_decision(
+        db,
+        suggestion,
+        decision="approved",
+        reviewer_note=body.note,
+        edited_text=approval.edited_text,
+        document_version_id=new_version.id,
+        decided_by_user_id=current_user.user_id,
+    )
 
     db.refresh(approval)
     return _to_out(approval, suggestion, store, current_user.tenant_id)

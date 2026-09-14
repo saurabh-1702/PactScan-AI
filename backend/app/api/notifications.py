@@ -7,6 +7,7 @@ POST /api/notifications/{id}/mark-read    -> mark one as read
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.api.deps import CurrentUser, get_current_user
@@ -23,7 +24,13 @@ def list_notifications(
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
 ) -> list[NotificationOut]:
-    q = db.query(Notification).filter(Notification.tenant_id == current_user.tenant_id)
+    q = db.query(Notification).filter(
+        Notification.tenant_id == current_user.tenant_id,
+        or_(
+            Notification.recipient_user_id.is_(None),
+            Notification.recipient_user_id == current_user.user_id,
+        ),
+    )
     if unread_only:
         q = q.filter(Notification.is_read.is_(False))
     rows = q.order_by(Notification.created_at.desc()).all()
@@ -37,7 +44,15 @@ def mark_read(
     current_user: CurrentUser = Depends(get_current_user),
 ) -> NotificationOut:
     row = db.get(Notification, notification_id)
-    if row is None or row.tenant_id != current_user.tenant_id:
+    # A targeted notification (recipient_user_id set) may only be marked read
+    # by its recipient; a broadcast one (recipient_user_id None) is shared
+    # tenant-wide, matching how the whole notification feed already works for
+    # those — there's no per-user read state for a shared row.
+    if (
+        row is None
+        or row.tenant_id != current_user.tenant_id
+        or (row.recipient_user_id is not None and row.recipient_user_id != current_user.user_id)
+    ):
         raise HTTPException(404, f"notification {notification_id!r} not found")
     row.is_read = True
     db.commit()

@@ -17,7 +17,7 @@ import logging
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.db.models import Notification, User
+from app.db.models import Notification, RedlineSuggestion, User
 from app.models.clause import Finding
 
 logger = logging.getLogger("pactscan.notifications")
@@ -50,6 +50,66 @@ def notify_new_findings(
         _send_high_severity_emails(db, tenant_id, contract_filename, high_severity)
 
 
+def notify_approval_decision(
+    db: Session,
+    suggestion: RedlineSuggestion,
+    decision: str,
+    reviewer_note: str | None,
+    edited_text: str | None,
+    document_version_id: str | None,
+    decided_by_user_id: str | None,
+) -> None:
+    """Closes the loop back to whoever drafted this suggestion (Suggest, or
+    Ask's edit-instruction handoff) once a reviewer/admin decides it.
+    Addressed to that one user (Notification.recipient_user_id), not
+    broadcast — unlike notify_new_findings above.
+
+    Skipped entirely when the draft has no traceable requester (created
+    before this column existed, or via a direct pipeline call with no
+    authenticated caller), or when the requester is the same person who just
+    decided it — no point notifying yourself about your own action.
+    """
+    if not suggestion.requested_by_user_id:
+        return
+    if suggestion.requested_by_user_id == decided_by_user_id:
+        return
+
+    if decision == "rejected":
+        reason = reviewer_note or "No reason was given."
+        message = (
+            f"Your suggested fix for clause {suggestion.clause_id} was rejected. "
+            f"Reviewer's note: {reason}"
+        )
+        version_id = None
+    else:
+        was_edited = bool(edited_text) and edited_text != suggestion.proposed_text
+        if was_edited:
+            message = (
+                f"Your suggested fix for clause {suggestion.clause_id} was approved, but a "
+                "reviewer wrote their own edit instead of using your exact wording. A new "
+                "document version is available."
+            )
+        else:
+            message = (
+                f"Your suggested fix for clause {suggestion.clause_id} was approved and "
+                "applied. A new document version is available."
+            )
+        version_id = document_version_id
+
+    db.add(
+        Notification(
+            kind="approval_decided",
+            tenant_id=suggestion.tenant_id,
+            recipient_user_id=suggestion.requested_by_user_id,
+            finding_id=suggestion.finding_id,
+            severity=None,
+            message=message,
+            document_version_id=version_id,
+        )
+    )
+    db.commit()
+
+
 def _send_high_severity_emails(
     db: Session,
     tenant_id: str,
@@ -64,19 +124,24 @@ def _send_high_severity_emails(
     if not recipients:
         return
 
-    try:
-        import resend
+    import resend
 
-        resend.api_key = settings.resend_api_key
-        lines = [
-            f"- {finding.rule_or_regulation_violated} (page {finding.page_number})"
-            for _, finding in high_severity
-        ]
-        body = (
-            f"{len(high_severity)} HIGH severity finding(s) in {contract_filename}:\n\n"
-            + "\n".join(lines)
-        )
-        for user in recipients:
+    resend.api_key = settings.resend_api_key
+    lines = [
+        f"- {finding.rule_or_regulation_violated} (page {finding.page_number})"
+        for _, finding in high_severity
+    ]
+    body = (
+        f"{len(high_severity)} HIGH severity finding(s) in {contract_filename}:\n\n"
+        + "\n".join(lines)
+    )
+    # Each recipient is sent independently — one bad/unverified address (e.g.
+    # a fake seeded demo account, under Resend's sandbox restriction) must
+    # never prevent the rest of the tenant's reviewers/admins from being
+    # notified. A single shared try/except around the whole loop would abort
+    # on the first failure and silently skip everyone after it.
+    for user in recipients:
+        try:
             resend.Emails.send(
                 {
                     "from": settings.notification_email_from,
@@ -85,5 +150,9 @@ def _send_high_severity_emails(
                     "text": body,
                 }
             )
-    except Exception:  # noqa: BLE001 - email is a bonus channel, never fatal
-        logger.warning("HIGH-severity email notification failed (in-app rows already saved)", exc_info=True)
+        except Exception:  # noqa: BLE001 - email is a bonus channel, never fatal
+            logger.warning(
+                "HIGH-severity email notification failed for %s (in-app row already saved)",
+                user.email,
+                exc_info=True,
+            )

@@ -40,6 +40,7 @@ async def suggest_from_finding(
     finding_id: str,
     tenant_id: str = DEMO_TENANT,
     run_adversarial: bool = True,
+    requested_by_user_id: str | None = None,
 ) -> SuggestResult:
     finding = store.find_finding_by_id(finding_id, tenant_id=tenant_id)
     if finding is None:
@@ -52,7 +53,13 @@ async def suggest_from_finding(
         store, clause, change_request=finding.explanation, finding=finding, tenant_id=tenant_id
     )
     return await _run_pipeline(
-        db, ctx, clause, finding_id=finding_id, run_adversarial=run_adversarial, tenant_id=tenant_id
+        db,
+        ctx,
+        clause,
+        finding_id=finding_id,
+        run_adversarial=run_adversarial,
+        tenant_id=tenant_id,
+        requested_by_user_id=requested_by_user_id,
     )
 
 
@@ -64,6 +71,7 @@ async def suggest_standalone(
     change_request: str,
     tenant_id: str = DEMO_TENANT,
     run_adversarial: bool = True,
+    requested_by_user_id: str | None = None,
 ) -> SuggestResult:
     clause = store.get_clause_by_id(clause_id, tenant_id=tenant_id)
     if clause is None:
@@ -77,7 +85,13 @@ async def suggest_standalone(
         store, clause, change_request=change_request, finding=None, tenant_id=tenant_id
     )
     return await _run_pipeline(
-        db, ctx, clause, finding_id=None, run_adversarial=run_adversarial, tenant_id=tenant_id
+        db,
+        ctx,
+        clause,
+        finding_id=None,
+        run_adversarial=run_adversarial,
+        tenant_id=tenant_id,
+        requested_by_user_id=requested_by_user_id,
     )
 
 
@@ -88,6 +102,7 @@ async def _run_pipeline(
     finding_id: str | None,
     run_adversarial: bool,
     tenant_id: str = DEMO_TENANT,
+    requested_by_user_id: str | None = None,
 ) -> SuggestResult:
     redline = await draft_redline(ctx)
 
@@ -105,6 +120,7 @@ async def _run_pipeline(
 
     row = RedlineSuggestion(
         tenant_id=tenant_id,
+        requested_by_user_id=requested_by_user_id,
         finding_id=finding_id,
         contract_id=clause.contract_id,
         clause_id=clause.clause_id,

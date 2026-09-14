@@ -10,6 +10,7 @@ This folder holds the project specification and the phase-by-phase build plan.
 | `PactScan_AI_Known_Issues_And_Lessons_Learned.md` | Running log of environment bugs, process mistakes, and their fixes — **read before debugging**. Appended to whenever a new issue is hit and fixed. |
 | `Phase_0_Repo_Setup_Prompt.md` … `Phase_7_Polish_And_Demo_Prep_Prompt.md` | The phase-by-phase build instructions. Phase 0 = repo/env scaffold; Phase 1 = Detect agent; Phase 2 = Suggest; Phase 3 = Fix & Learn; Phase 4 = Ask agent; Phase 5 = Login/Dashboard/Notifications; Phase 6 = Horizon-Scanning & Restore; Phase 7 = Polish & Demo prep. |
 | `SETUP_NOTES.md` | Deviations from the phase prompts made during the actual build (dependency version substitutions, tooling notes). |
+| `PactScan_AI_Ideas_And_Scope_Additions_Log.md` | Features added beyond what a phase prompt literally asked for — whose idea, what was built, and why. A paper trail of where the build went past the floor a prompt set. |
 
 ## Current status
 
@@ -64,9 +65,19 @@ gracefully with no key configured).
   testing caught two different users under the same tenant seeing each
   other's Ask conversations). Every session query is now scoped by
   `(tenant_id, user_id)`, and reusing someone else's `session_id` 404s.
-- Tests: 57 mocked pass (10 new, incl. the tenant-isolation exit-criteria test
-  with two seeded tenants, rate-limit tests for both entry points, and a
-  cross-user chat-session isolation regression test); not
+- **Closing the loop back to the requester**: once a reviewer/admin decides a
+  pending approval, whoever originally requested that draft (Suggest, or
+  Ask's edit-instruction handoff) gets a targeted notification —
+  `RedlineSuggestion.requested_by_user_id` tracks the requester,
+  `Notification.kind="approval_decided"` addresses it to just that person.
+  Rejected includes the reviewer's note (now actually collected — the
+  frontend's Reject button never had an input for it before this); approved
+  includes a direct download link to the new version, worded differently if
+  the reviewer wrote their own edit rather than using the exact drafted text.
+- Tests: 61 mocked pass (14 new, incl. the tenant-isolation exit-criteria test
+  with two seeded tenants, rate-limit tests for both entry points, a
+  cross-user chat-session isolation regression test, and full coverage of
+  all three requester-notification outcomes); not
   yet run live or manually tested — pending before merge to `develop`
 
 **Phase 4 complete and merged to `develop` — Ask agent (chatbot, contract Q&A, compliance-status Q&A, general legal-tech Q&A, edit-instruction handoff, chat history).** Scope
