@@ -14,7 +14,7 @@ This folder holds the project specification and the phase-by-phase build plan.
 
 ## Current status
 
-**Phase 5 built — Login, role-based dashboard, real-time notifications.** Real
+**Phase 5 complete and merged to `develop` — Login, role-based dashboard, real-time notifications.** Real
 email/password auth (bcrypt + JWT, no SSO — a deliberate simplification per
 the phase prompt) replaces the hardcoded `tenant_id = "demo_tenant"` used
 throughout Phases 1-4; every existing endpoint now resolves the real tenant
@@ -77,8 +77,8 @@ gracefully with no key configured).
 - Tests: 61 mocked pass (14 new, incl. the tenant-isolation exit-criteria test
   with two seeded tenants, rate-limit tests for both entry points, a
   cross-user chat-session isolation regression test, and full coverage of
-  all three requester-notification outcomes); not
-  yet run live or manually tested — pending before merge to `develop`
+  all three requester-notification outcomes); verified live, and manually
+  tested end-to-end including real email delivery via Resend
 
 **Phase 4 complete and merged to `develop` — Ask agent (chatbot, contract Q&A, compliance-status Q&A, general legal-tech Q&A, edit-instruction handoff, chat history).** Scope
 expanded beyond the literal phase prompt at the user's request: two extra
