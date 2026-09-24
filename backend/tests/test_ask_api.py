@@ -158,7 +158,7 @@ def test_ask_edit_instruction_via_api_never_modifies_a_file(api_client):
     body = resp.json()
     assert body["type"] == "edit_draft"
     assert body["suggestion_id"] is not None
-    assert body["approval_id"] is not None
+    assert body["approval_id"] is None  # drafted only; queued once the requester submits it
 
     assert hashlib.sha256(Path(v1.file_path).read_bytes()).hexdigest() == before_hash
     assert db.query(DocumentVersion).filter_by(contract_id="ct_test_a").count() == 1

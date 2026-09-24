@@ -113,7 +113,7 @@ def apply_approved_redline(
             "the original document was never captured (see document_store.ensure_initial_version)."
         )
 
-    proposed_text = approval.edited_text or suggestion.proposed_text
+    proposed_text = approval.edited_text or suggestion.submitted_text
 
     contract_dir = get_contract_dir(tenant_id, suggestion.contract_id)
     new_version_number = latest.version_number + 1

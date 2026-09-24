@@ -135,7 +135,7 @@ def build_status_summary(
                 "proposed_text": s.proposed_text,
                 "rationale": s.rationale,
                 "confidence": s.confidence,
-                "approval_status": approval.status if approval else "unknown",
+                "approval_status": approval.status if approval else "draft (not yet submitted for review)",
                 "created_at": s.created_at.isoformat(),
             }
         )

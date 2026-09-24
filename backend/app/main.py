@@ -91,6 +91,7 @@ from app.api.dashboard import router as dashboard_router  # noqa: E402
 from app.api.detect import router as detect_router  # noqa: E402
 from app.api.documents import router as documents_router  # noqa: E402
 from app.api.horizon_scanning import router as horizon_scanning_router  # noqa: E402
+from app.api.my_drafts import router as my_drafts_router  # noqa: E402
 from app.api.notifications import router as notifications_router  # noqa: E402
 from app.api.restore_requests import router as restore_requests_router  # noqa: E402
 from app.api.suggest import router as suggest_router  # noqa: E402
@@ -105,6 +106,7 @@ app.include_router(notifications_router)
 app.include_router(dashboard_router)
 app.include_router(horizon_scanning_router)
 app.include_router(restore_requests_router)
+app.include_router(my_drafts_router)
 
 
 @app.get("/health")

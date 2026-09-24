@@ -17,6 +17,7 @@ const NAV_LINKS: { href: string; label: string; roles?: string[] }[] = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/detect", label: "Detect" },
   { href: "/ask", label: "Ask" },
+  { href: "/my-drafts", label: "My Drafts" },
   { href: "/approvals", label: "Approvals", roles: ["reviewer", "admin"] },
   { href: "/admin/horizon-scanning", label: "Horizon-Scanning", roles: ["admin"] },
 ];

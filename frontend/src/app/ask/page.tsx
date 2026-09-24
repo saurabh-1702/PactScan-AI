@@ -2,14 +2,16 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { getCurrentUser } from "@/lib/auth";
+import DraftSubmitPanel from "@/components/DraftSubmitPanel";
 import {
+  getMyDraft,
   getChatMessages,
   getChatSessions,
   postAsk,
   type AskResponseType,
   type AskSourceInfo,
   type ChatSessionInfo,
+  type DraftInfo,
 } from "@/lib/api";
 
 interface DisplayMessage {
@@ -42,6 +44,39 @@ const TYPE_STYLES: Record<AskResponseType, string> = {
   rate_limited: "bg-red-100 text-red-800",
 };
 
+/** The drafted edit for an Ask edit-instruction: still a draft -> preview, edit
+ * and submit right here in the chat; already submitted -> just its status. */
+function AskDraft({ suggestionId }: { suggestionId: string }) {
+  const [draft, setDraft] = useState<DraftInfo | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    getMyDraft(suggestionId)
+      .then(setDraft)
+      .catch((e) => setError(e instanceof Error ? e.message : "Could not load the draft"));
+  }, [suggestionId]);
+
+  if (error) return <p className="mt-2 text-xs text-red-700">{error}</p>;
+  if (!draft) return <p className="mt-2 text-xs text-neutral-500">Loading draft…</p>;
+  if (draft.status === "draft") {
+    return (
+      <DraftSubmitPanel
+        suggestionId={draft.suggestion_id}
+        aiDraft={draft.ai_draft_text}
+        rationale={draft.rationale}
+      />
+    );
+  }
+  return (
+    <p className="mt-2 text-xs text-neutral-600">
+      Status: <span className="font-semibold">{draft.status}</span>.{" "}
+      <Link href="/my-drafts" className="font-semibold text-emerald-700 underline">
+        Track it in My Drafts →
+      </Link>
+    </p>
+  );
+}
+
 export default function AskPage() {
   const [sessions, setSessions] = useState<ChatSessionInfo[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -50,13 +85,6 @@ export default function AskPage() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const [canDecide, setCanDecide] = useState(false);
-
-  useEffect(() => {
-    const role = getCurrentUser()?.role;
-    setCanDecide(role === "reviewer" || role === "admin");
-  }, []);
-
   async function loadSessions() {
     try {
       setSessions(await getChatSessions());
@@ -205,20 +233,9 @@ export default function AskPage() {
                   </div>
                 )}
 
-                {m.responseType === "edit_draft" &&
-                  (canDecide ? (
-                    <Link
-                      href="/approvals"
-                      className="mt-2 block text-xs font-semibold text-emerald-700 underline"
-                    >
-                      → View this draft in the Approval Queue
-                    </Link>
-                  ) : (
-                    <p className="mt-2 text-xs text-neutral-500">
-                      A reviewer will review this draft. You&apos;ll get a notification (bell,
-                      top right) once it&apos;s been decided.
-                    </p>
-                  ))}
+                {m.responseType === "edit_draft" && m.suggestionId && (
+                  <AskDraft suggestionId={m.suggestionId} />
+                )}
               </div>
             </div>
           ))}

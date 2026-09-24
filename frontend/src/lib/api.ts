@@ -122,6 +122,8 @@ export interface SuggestResult {
   judge: JudgeVerdict | null;
   negotiation: NegotiationFallback | null;
   created_at: string;
+  /** null while it's only a draft — set once the requester submits it */
+  approval_id: string | null;
 }
 
 export async function postSuggestFromFinding(findingId: string): Promise<SuggestResult> {
@@ -147,7 +149,10 @@ export interface Approval {
   contract_id: string;
   clause_id: string;
   original_clause_text: string;
+  /** what was submitted for review: the requester's edit if they made one, else the AI draft */
   proposed_text: string;
+  ai_draft_text: string | null;
+  requester_edited_text: string | null;
   rationale: string;
   confidence: number;
 }
@@ -415,4 +420,52 @@ export async function decideRestoreRequest(
     body: JSON.stringify({ decision, note: note ?? null }),
   });
   return handleJson<RestoreRequestInfo>(res);
+}
+
+// --- My drafts (Phase 6b) ----------------------------------------------------
+
+export type DraftStatus = "draft" | "pending" | "approved" | "rejected";
+
+/** One suggestion with every text that can exist for it: the AI's draft, the
+ * requester's own edit of it, and the reviewer's edit at decision time. */
+export interface DraftInfo {
+  suggestion_id: string;
+  contract_id: string;
+  filename: string | null;
+  clause_id: string;
+  finding_id: string | null;
+  original_clause_text: string;
+  ai_draft_text: string;
+  requester_edited_text: string | null;
+  rationale: string;
+  confidence: number;
+  status: DraftStatus;
+  approval_id: string | null;
+  reviewer_edited_text: string | null;
+  reviewer_note: string | null;
+  document_version_id: string | null;
+  created_at: string;
+  submitted_at: string | null;
+  decided_at: string | null;
+}
+
+export async function getMyDrafts(): Promise<DraftInfo[]> {
+  const res = await authFetch("/api/my-drafts");
+  return handleJson<DraftInfo[]>(res);
+}
+
+export async function getMyDraft(suggestionId: string): Promise<DraftInfo> {
+  const res = await authFetch(`/api/my-drafts/${suggestionId}`);
+  return handleJson<DraftInfo>(res);
+}
+
+/** Submits a draft to a reviewer. Omit `editedText` (or leave it identical to
+ * the AI draft) to submit the AI draft as-is. */
+export async function submitDraft(suggestionId: string, editedText?: string): Promise<DraftInfo> {
+  const res = await authFetch(`/api/my-drafts/${suggestionId}/submit`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ edited_text: editedText ?? null }),
+  });
+  return handleJson<DraftInfo>(res);
 }

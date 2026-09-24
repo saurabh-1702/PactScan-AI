@@ -69,7 +69,9 @@ def _to_out(
         contract_id=suggestion.contract_id,
         clause_id=suggestion.clause_id,
         original_clause_text=clause.raw_text if clause else "(clause not found in graph)",
-        proposed_text=suggestion.proposed_text,
+        proposed_text=suggestion.submitted_text,
+        ai_draft_text=suggestion.proposed_text,
+        requester_edited_text=suggestion.requester_edited_text,
         rationale=suggestion.rationale,
         confidence=suggestion.confidence,
     )
@@ -197,7 +199,7 @@ def decide_approval(
         record_accepted_redline(
             db,
             clause_type=clause.clause_type.value,
-            accepted_text=approval.edited_text or suggestion.proposed_text,
+            accepted_text=approval.edited_text or suggestion.submitted_text,
         )
 
     notify_approval_decision(

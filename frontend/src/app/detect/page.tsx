@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import DraftSubmitPanel from "@/components/DraftSubmitPanel";
 import {
   postDetect,
   postSuggestFromFinding,
@@ -162,16 +163,11 @@ export default function DetectPage() {
 
                     {suggestion && (
                       <div className="mt-3 rounded border border-neutral-300 bg-white/80 p-3 text-neutral-800">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
-                          Proposed redline (draft only — not written to the document)
-                        </p>
-                        <p className="mt-1 whitespace-pre-wrap">{suggestion.proposed_text}</p>
-                        <p className="mt-2 text-xs text-neutral-600">
-                          <span className="font-semibold">Rationale: </span>
-                          {suggestion.rationale}
-                          {" "}
-                          <span className="opacity-60">(confidence {suggestion.confidence})</span>
-                        </p>
+                        <DraftSubmitPanel
+                          suggestionId={suggestion.suggestion_id}
+                          aiDraft={suggestion.proposed_text}
+                          rationale={`${suggestion.rationale} (confidence ${suggestion.confidence})`}
+                        />
 
                         {suggestion.judge && (
                           <p className="mt-2 text-xs text-neutral-600">

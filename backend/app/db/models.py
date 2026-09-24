@@ -38,7 +38,14 @@ class RedlineSuggestion(Base):
     finding_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     contract_id: Mapped[str] = mapped_column(String(40), index=True)
     clause_id: Mapped[str] = mapped_column(String(40), index=True)
+    # The AI's drafted text — never overwritten.
     proposed_text: Mapped[str] = mapped_column(Text)
+    # Set only if the requester edited the AI draft before submitting it for
+    # review (Phase 6b). Three texts can now exist for one suggestion: the AI's
+    # (proposed_text), the requester's edit of it (this), and the reviewer's
+    # own edit at decision time (Approval.edited_text). Kept separate so the
+    # requester can later see exactly what changed at each step.
+    requester_edited_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     rationale: Mapped[str] = mapped_column(Text)
     confidence: Mapped[int] = mapped_column(Integer)
     contrarian_json: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -48,11 +55,17 @@ class RedlineSuggestion(Base):
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
+    @property
+    def submitted_text(self) -> str:
+        """What was actually put in front of the reviewer: the requester's own
+        edit if they made one, otherwise the AI draft."""
+        return self.requester_edited_text or self.proposed_text
+
 
 class Approval(Base):
-    """The human-in-the-loop gate. `status` starts 'pending' (auto-created right
-    after a Suggest call succeeds) and is only ever changed by
-    POST /api/approvals/{id}/decide.
+    """The human-in-the-loop gate. `status` starts 'pending' (created when a
+    requester SUBMITS a draft for review — Phase 6b split drafting from
+    submitting) and is only ever changed by POST /api/approvals/{id}/decide.
 
     `edited_text` is an addition beyond the Phase 3 prompt's literal schema —
     needed so a reviewer's "Edit" action (required by the frontend spec) has

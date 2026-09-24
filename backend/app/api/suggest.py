@@ -55,6 +55,7 @@ async def suggest_from_finding_endpoint(
             finding_id,
             tenant_id=current_user.tenant_id,
             requested_by_user_id=current_user.user_id,
+            submit_for_review=False,
         )
     except SuggestInputError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -80,6 +81,7 @@ async def suggest_standalone_endpoint(
             body.change_request,
             tenant_id=current_user.tenant_id,
             requested_by_user_id=current_user.user_id,
+            submit_for_review=False,
         )
     except SuggestInputError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

@@ -16,7 +16,6 @@ from app.agents.ask.ask_retriever import find_contract_by_name
 from app.agents.detect.graph_store import DEMO_TENANT, GraphStore
 from app.agents.suggest.embed_clauses import ensure_embeddings_for_contract
 from app.agents.suggest.pipeline import SuggestInputError, suggest_standalone
-from app.db.models import Approval
 from app.llm import client as llm
 from app.models.ask import AskResponse, AskResponseType, ScopeClassification
 
@@ -74,26 +73,21 @@ async def handle_edit_instruction(
             change_request,
             tenant_id=tenant_id,
             requested_by_user_id=requested_by_user_id,
+            submit_for_review=False,
         )
     except SuggestInputError as exc:
         return AskResponse(session_id="", type=AskResponseType.ABSTAINED, answer_text=str(exc))
-
-    approval = (
-        db.query(Approval)
-        .filter(Approval.redline_suggestion_id == result.suggestion_id)
-        .order_by(Approval.created_at.desc())
-        .first()
-    )
 
     return AskResponse(
         session_id="",
         type=AskResponseType.EDIT_DRAFT,
         answer_text=(
-            f"I've drafted a proposed edit to {match['filename']} and added it to the "
-            "approval queue. This is a DRAFT only — nothing has changed in the real "
-            "document. A human reviewer must approve it before anything is written."
+            f"I've drafted a proposed edit to {match['filename']}. It's only a DRAFT so "
+            "far — nothing has been sent to a reviewer and nothing has changed in the real "
+            "document. Review it below, edit it if you like, then submit it. A human "
+            "reviewer must approve it before anything is written."
         ),
         sources=[],
         suggestion_id=result.suggestion_id,
-        approval_id=approval.id if approval else None,
+        approval_id=None,
     )

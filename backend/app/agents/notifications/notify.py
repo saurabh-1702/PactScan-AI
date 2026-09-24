@@ -87,7 +87,7 @@ def notify_approval_decision(
         )
         version_id = None
     else:
-        was_edited = bool(edited_text) and edited_text != suggestion.proposed_text
+        was_edited = bool(edited_text) and edited_text != suggestion.submitted_text
         if was_edited:
             message = (
                 f"Your suggested fix for clause {suggestion.clause_id} was approved, but a "

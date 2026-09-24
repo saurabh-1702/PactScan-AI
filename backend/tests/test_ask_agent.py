@@ -115,7 +115,7 @@ async def test_similarity_threshold_forces_abstention(
     assert response.type == AskResponseType.ABSTAINED
 
 
-async def test_edit_instruction_creates_pending_approval_and_touches_no_file(
+async def test_edit_instruction_only_drafts_until_the_requester_submits_it(
     seeded_store, fake_llm, fake_parse, fake_embed, fixture_pdf, db_session
 ):
     await _ingest(seeded_store, fixture_pdf, db_session, "contract_a_conflict.pdf", "ct_a")
@@ -133,13 +133,13 @@ async def test_edit_instruction_creates_pending_approval_and_touches_no_file(
 
     assert response.type == AskResponseType.EDIT_DRAFT
     assert response.suggestion_id is not None
-    assert response.approval_id is not None
+    # Phase 6b: Ask only DRAFTS. Nothing is in a reviewer's queue until the
+    # requester submits it (POST /api/my-drafts/{id}/submit).
+    assert response.approval_id is None
 
     suggestion = db_session.get(RedlineSuggestion, response.suggestion_id)
     assert suggestion is not None
-    approval = db_session.get(Approval, response.approval_id)
-    assert approval is not None
-    assert approval.status == "pending"
+    assert db_session.query(Approval).filter_by(redline_suggestion_id=suggestion.id).count() == 0
 
     assert hashlib.sha256(Path(v1.file_path).read_bytes()).hexdigest() == before_hash
     assert db_session.query(DocumentVersion).filter_by(contract_id="ct_a").count() == 1

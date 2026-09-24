@@ -82,6 +82,8 @@ class SuggestResult(BaseModel):
     judge: JudgeVerdict | None = None
     negotiation: NegotiationFallback | None = None
     created_at: datetime
+    # None while this is only a draft (Phase 6b) — set once it's been submitted
+    approval_id: str | None = None
 
 
 class StandaloneSuggestRequest(BaseModel):

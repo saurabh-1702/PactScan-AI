@@ -206,7 +206,12 @@ export default function ApprovalsPage() {
                       </div>
                       <div className="rounded border border-emerald-300 bg-emerald-50 p-2">
                         <p className="text-xs font-semibold uppercase text-emerald-700">
-                          Proposed
+                          Proposed{" "}
+                          <span className="font-normal normal-case text-emerald-800">
+                            {a.requester_edited_text
+                              ? "— edited by the requester"
+                              : "— AI draft, unchanged"}
+                          </span>
                         </p>
                         {isEditing ? (
                           <textarea
@@ -219,6 +224,14 @@ export default function ApprovalsPage() {
                           />
                         ) : (
                           <p className="mt-1 whitespace-pre-wrap">{a.proposed_text}</p>
+                        )}
+                        {a.requester_edited_text && a.ai_draft_text && (
+                          <details className="mt-2 text-xs text-neutral-600">
+                            <summary className="cursor-pointer font-semibold">
+                              Show the AI&apos;s original draft
+                            </summary>
+                            <p className="mt-1 whitespace-pre-wrap">{a.ai_draft_text}</p>
+                          </details>
                         )}
                       </div>
                     </div>

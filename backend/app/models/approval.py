@@ -39,7 +39,12 @@ class ApprovalOut(BaseModel):
     contract_id: str
     clause_id: str
     original_clause_text: str
+    # proposed_text = what was submitted for review (the requester's edit if they
+    # made one, else the AI draft); the two source texts are also exposed so a
+    # reviewer can see what the requester changed.
     proposed_text: str
+    ai_draft_text: str | None = None
+    requester_edited_text: str | None = None
     rationale: str
     confidence: int
 

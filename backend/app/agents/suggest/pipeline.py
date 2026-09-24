@@ -41,7 +41,13 @@ async def suggest_from_finding(
     tenant_id: str = DEMO_TENANT,
     run_adversarial: bool = True,
     requested_by_user_id: str | None = None,
+    submit_for_review: bool = True,
 ) -> SuggestResult:
+    """``submit_for_review=False`` (what the API and Ask pass) only DRAFTS: the
+    suggestion is persisted but not queued, so the requester can preview and
+    optionally edit it first and then submit it via ``enqueue_for_review``.
+    The default of True keeps direct pipeline callers/tests on the old
+    draft-and-queue-in-one-step behaviour."""
     finding = store.find_finding_by_id(finding_id, tenant_id=tenant_id)
     if finding is None:
         raise SuggestInputError(f"Finding {finding_id!r} not found.")
@@ -60,6 +66,7 @@ async def suggest_from_finding(
         run_adversarial=run_adversarial,
         tenant_id=tenant_id,
         requested_by_user_id=requested_by_user_id,
+        submit_for_review=submit_for_review,
     )
 
 
@@ -72,6 +79,7 @@ async def suggest_standalone(
     tenant_id: str = DEMO_TENANT,
     run_adversarial: bool = True,
     requested_by_user_id: str | None = None,
+    submit_for_review: bool = True,
 ) -> SuggestResult:
     clause = store.get_clause_by_id(clause_id, tenant_id=tenant_id)
     if clause is None:
@@ -92,7 +100,46 @@ async def suggest_standalone(
         run_adversarial=run_adversarial,
         tenant_id=tenant_id,
         requested_by_user_id=requested_by_user_id,
+        submit_for_review=submit_for_review,
     )
+
+
+class SubmissionError(ValueError):
+    """A user-facing 4xx-shaped error from submitting a draft."""
+
+
+def enqueue_for_review(
+    db: Session,
+    suggestion: RedlineSuggestion,
+    edited_text: str | None = None,
+    source: str = "suggest_pipeline",
+) -> Approval:
+    """Puts a drafted suggestion in front of a reviewer as a pending Approval.
+    If the requester edited the AI text, that edit is stored on the suggestion
+    (never over the AI's own text). Raises if it's already been submitted."""
+    if db.query(Approval).filter(Approval.redline_suggestion_id == suggestion.id).first():
+        raise SubmissionError("This draft has already been submitted for review.")
+
+    text = (edited_text or "").strip()
+    edited = bool(text) and text != suggestion.proposed_text
+    if edited:
+        suggestion.requester_edited_text = text
+
+    approval = Approval(redline_suggestion_id=suggestion.id, status="pending")
+    db.add(approval)
+    db.flush()  # assigns approval.id (the Python-side default) before it's referenced below
+    db.add(
+        AuditLog(
+            event_type="approval_created",
+            entity_id=approval.id,
+            details=json.dumps(
+                {"redline_suggestion_id": suggestion.id, "source": source, "requester_edited": edited}
+            ),
+        )
+    )
+    db.commit()
+    db.refresh(approval)
+    return approval
 
 
 async def _run_pipeline(
@@ -103,6 +150,7 @@ async def _run_pipeline(
     run_adversarial: bool,
     tenant_id: str = DEMO_TENANT,
     requested_by_user_id: str | None = None,
+    submit_for_review: bool = True,
 ) -> SuggestResult:
     redline = await draft_redline(ctx)
 
@@ -135,20 +183,7 @@ async def _run_pipeline(
     db.commit()
     db.refresh(row)
 
-    # Phase 3: every successful Suggest output automatically enters the human
-    # approval queue as 'pending' — this is the only place an Approval row for
-    # a redline_suggestion is created outside the manual POST /api/approvals.
-    approval = Approval(redline_suggestion_id=row.id, status="pending")
-    db.add(approval)
-    db.flush()  # assigns approval.id (the Python-side default) before it's referenced below
-    db.add(
-        AuditLog(
-            event_type="approval_created",
-            entity_id=approval.id,
-            details=json.dumps({"redline_suggestion_id": row.id, "source": "suggest_pipeline"}),
-        )
-    )
-    db.commit()
+    approval = enqueue_for_review(db, row) if submit_for_review else None
 
     return SuggestResult(
         suggestion_id=row.id,
@@ -162,4 +197,5 @@ async def _run_pipeline(
         judge=judge,
         negotiation=negotiation,
         created_at=row.created_at,
+        approval_id=approval.id if approval else None,
     )
