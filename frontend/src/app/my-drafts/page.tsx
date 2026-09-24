@@ -1,176 +1,285 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import DiffText from "@/components/DiffText";
+import { Download, FileEdit, Search } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useMemo, useState } from "react";
+import DiffText, { DiffLegend } from "@/components/DiffText";
 import DraftSubmitPanel from "@/components/DraftSubmitPanel";
+import TextPanel, { PlainText } from "@/components/TextPanel";
+import { Button } from "@/components/ui/Button";
+import { Dialog } from "@/components/ui/Dialog";
+import { Alert, Badge, EmptyState, Skeleton } from "@/components/ui/Feedback";
+import { Input, Select } from "@/components/ui/Field";
+import { Page, PageHeader } from "@/components/ui/Layout";
+import { Table, Td, Th, THead, Tr } from "@/components/ui/Table";
+import { useToast } from "@/components/ui/Toast";
 import { downloadDocumentVersion, getMyDrafts, type DraftInfo, type DraftStatus } from "@/lib/api";
+import { formatDateTime, timeAgo } from "@/lib/format";
+import { useDebounced, useLoad } from "@/lib/hooks";
 
-const STATUS_STYLES: Record<DraftStatus, string> = {
-  draft: "bg-neutral-200 text-neutral-700",
-  pending: "bg-amber-100 text-amber-800",
-  approved: "bg-emerald-100 text-emerald-800",
-  rejected: "bg-red-100 text-red-800",
+const STATUS: Record<DraftStatus, { label: string; tone: "neutral" | "warn" | "success" | "danger" }> = {
+  draft: { label: "Not submitted", tone: "neutral" },
+  pending: { label: "With a reviewer", tone: "warn" },
+  approved: { label: "Approved", tone: "success" },
+  rejected: { label: "Rejected", tone: "danger" },
 };
 
-const STATUS_LABELS: Record<DraftStatus, string> = {
-  draft: "Draft — not submitted",
-  pending: "Waiting for a reviewer",
-  approved: "Approved",
-  rejected: "Rejected",
-};
+const FILTERS: { value: "all" | DraftStatus; label: string }[] = [
+  { value: "all", label: "All statuses" },
+  { value: "draft", label: "Not submitted" },
+  { value: "pending", label: "With a reviewer" },
+  { value: "approved", label: "Approved" },
+  { value: "rejected", label: "Rejected" },
+];
 
-function TextBox({ title, tone, children }: { title: string; tone: string; children: React.ReactNode }) {
+function isStatus(v: string | null): v is DraftStatus {
+  return v === "draft" || v === "pending" || v === "approved" || v === "rejected";
+}
+
+function DraftsView() {
+  const toast = useToast();
+  const params = useSearchParams();
+  const initial = params.get("status");
+
+  const drafts = useLoad(getMyDrafts);
+  const [filter, setFilter] = useState<"all" | DraftStatus>(isStatus(initial) ? initial : "all");
+  const [query, setQuery] = useState("");
+  const q = useDebounced(query.trim().toLowerCase());
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  const rows = useMemo(
+    () =>
+      (drafts.data ?? []).filter((d) => {
+        if (filter !== "all" && d.status !== filter) return false;
+        if (!q) return true;
+        return (
+          (d.filename ?? "").toLowerCase().includes(q) ||
+          d.ai_draft_text.toLowerCase().includes(q) ||
+          d.original_clause_text.toLowerCase().includes(q)
+        );
+      }),
+    [drafts.data, filter, q],
+  );
+  const open = drafts.data?.find((d) => d.suggestion_id === openId) ?? null;
+
+  async function onDownload(d: DraftInfo) {
+    try {
+      await downloadDocumentVersion(d.document_version_id!, `${d.filename ?? d.contract_id}_updated.docx`);
+    } catch (err) {
+      toast.error(`Download failed: ${err instanceof Error ? err.message : "unknown error"}`);
+    }
+  }
+
   return (
-    <div className={`rounded border p-2 ${tone}`}>
-      <p className="text-xs font-semibold uppercase opacity-70">{title}</p>
-      <div className="mt-1">{children}</div>
+    <Page>
+      <PageHeader
+        title="My Drafts"
+        description="Every fix you've drafted — the AI's version, your own edit if you made one, and what a reviewer changed before approving it."
+      />
+
+      {drafts.error && !drafts.data && <Alert tone="danger">{drafts.error}</Alert>}
+
+      {drafts.loading && !drafts.data ? (
+        <div className="space-y-2">
+          <Skeleton className="h-10" />
+          <Skeleton className="h-14" />
+          <Skeleton className="h-14" />
+        </div>
+      ) : (drafts.data?.length ?? 0) === 0 ? (
+        <EmptyState icon={FileEdit} title="You haven't drafted anything yet">
+          Use “Draft a fix” on a finding in Detect, or ask for an edit in Ask. Drafts you create show
+          up here.
+        </EmptyState>
+      ) : (
+        <>
+          <div className="mb-4 flex flex-wrap gap-3">
+            <div className="relative min-w-56 flex-1 sm:max-w-xs">
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-faint"
+                aria-hidden
+              />
+              <Input
+                aria-label="Search drafts"
+                placeholder="Search by document or text"
+                className="pl-9"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </div>
+            <Select
+              aria-label="Filter by status"
+              className="w-auto"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value as "all" | DraftStatus)}
+            >
+              {FILTERS.map((f) => (
+                <option key={f.value} value={f.value}>
+                  {f.label}
+                </option>
+              ))}
+            </Select>
+          </div>
+
+          {rows.length === 0 ? (
+            <EmptyState icon={Search} title="No drafts match">
+              Try a different search or status.
+            </EmptyState>
+          ) : (
+            <Table caption="My drafts">
+              <THead>
+                <tr>
+                  <Th>Document</Th>
+                  <Th>Status</Th>
+                  <Th>Drafted</Th>
+                  <Th>Decided by</Th>
+                </tr>
+              </THead>
+              <tbody>
+                {rows.map((d) => (
+                  <Tr key={d.suggestion_id} onClick={() => setOpenId(d.suggestion_id)}>
+                    <Td>
+                      <span className="font-medium text-ink">{d.filename ?? d.contract_id}</span>
+                      <span className="mt-0.5 line-clamp-1 max-w-md text-xs text-muted">
+                        {d.requester_edited_text ?? d.ai_draft_text}
+                      </span>
+                    </Td>
+                    <Td>
+                      <Badge tone={STATUS[d.status].tone}>{STATUS[d.status].label}</Badge>
+                    </Td>
+                    <Td muted>{timeAgo(d.created_at)}</Td>
+                    <Td muted>{d.decided_by_email ?? "—"}</Td>
+                  </Tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
+        </>
+      )}
+
+      <Dialog
+        variant="sheet"
+        open={!!open}
+        onOpenChange={(o) => !o && setOpenId(null)}
+        title={open?.filename ?? "Draft"}
+        description={open ? STATUS[open.status].label : undefined}
+      >
+        {open && <DraftDetail d={open} onDownload={() => onDownload(open)} onSubmitted={drafts.reload} />}
+      </Dialog>
+    </Page>
+  );
+}
+
+function DraftDetail({
+  d,
+  onDownload,
+  onSubmitted,
+}: {
+  d: DraftInfo;
+  onDownload: () => void;
+  onSubmitted: () => void;
+}) {
+  const submitted = d.requester_edited_text ?? d.ai_draft_text;
+  const reviewerChanged =
+    d.reviewer_edited_text !== null && d.reviewer_edited_text.trim() !== submitted.trim();
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-muted">
+        Drafted {formatDateTime(d.created_at)}
+        {d.submitted_at && <> · submitted {formatDateTime(d.submitted_at)}</>}
+        {d.decided_at && (
+          <>
+            {" "}
+            · decided {formatDateTime(d.decided_at)}
+            {d.decided_by_email && <> by {d.decided_by_email}</>}
+          </>
+        )}
+      </p>
+
+      <TextPanel title="Original clause" tone="danger">
+        <PlainText>{d.original_clause_text}</PlainText>
+      </TextPanel>
+
+      <TextPanel title="AI draft" tone="accent">
+        <PlainText>{d.ai_draft_text}</PlainText>
+      </TextPanel>
+
+      {d.requester_edited_text && (
+        <TextPanel title="Your edited version" note="what you submitted" tone="neutral">
+          <DiffText before={d.ai_draft_text} after={d.requester_edited_text} />
+          <DiffLegend />
+        </TextPanel>
+      )}
+
+      {d.status === "draft" && (
+        <DraftSubmitPanel
+          suggestionId={d.suggestion_id}
+          aiDraft={d.ai_draft_text}
+          rationale={d.rationale}
+          onSubmitted={onSubmitted}
+        />
+      )}
+
+      {d.status === "pending" && (
+        <Alert tone="info">Waiting for a reviewer. You&apos;ll be notified when it&apos;s decided.</Alert>
+      )}
+
+      {d.status === "approved" && (
+        <TextPanel
+          title={reviewerChanged ? "Approved with the reviewer's changes" : "Approved as submitted"}
+          note={reviewerChanged ? "changes shown against what you submitted" : "no changes were made"}
+          tone="success"
+        >
+          {reviewerChanged && d.reviewer_edited_text ? (
+            <>
+              <DiffText before={submitted} after={d.reviewer_edited_text} />
+              <DiffLegend />
+            </>
+          ) : (
+            <PlainText>{submitted}</PlainText>
+          )}
+        </TextPanel>
+      )}
+
+      {d.status === "rejected" && (
+        <Alert tone="danger" title="Rejected">
+          {d.reviewer_note ? (
+            <>
+              <span className="font-medium">Reviewer&apos;s reason:</span> {d.reviewer_note}
+            </>
+          ) : (
+            "The reviewer didn't give a reason."
+          )}
+        </Alert>
+      )}
+      {d.status === "approved" && d.reviewer_note && (
+        <p className="text-[13px] text-muted">
+          <span className="font-medium text-ink">Reviewer&apos;s note:</span> {d.reviewer_note}
+        </p>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2 border-t border-line pt-4">
+        {d.status === "approved" && d.document_version_id && (
+          <Button variant="primary" size="sm" onClick={onDownload}>
+            <Download className="h-3.5 w-3.5" aria-hidden /> Download updated document
+          </Button>
+        )}
+        <Link
+          href={`/contracts/${d.contract_id}`}
+          className="text-[13px] font-medium text-accent hover:underline"
+        >
+          Open the contract
+        </Link>
+      </div>
     </div>
   );
 }
 
 export default function MyDraftsPage() {
-  const [drafts, setDrafts] = useState<DraftInfo[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  async function load() {
-    try {
-      setDrafts(await getMyDrafts());
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load your drafts");
-    }
-  }
-
-  useEffect(() => {
-    load();
-  }, []);
-
   return (
-    <main className="mx-auto max-w-4xl px-6 py-10">
-      <h1 className="text-2xl font-semibold tracking-tight">My Drafts</h1>
-      <p className="mt-1 text-sm text-neutral-500">
-        Every fix you&apos;ve drafted — the AI&apos;s version, your own edit if you made one, and
-        what a reviewer changed before approving it.
-      </p>
-
-      {error && (
-        <p className="mt-4 rounded border border-red-400 bg-red-50 p-3 text-sm text-red-800">
-          {error}
-        </p>
-      )}
-
-      {drafts === null ? (
-        <p className="mt-6 text-sm text-neutral-500">Loading…</p>
-      ) : drafts.length === 0 ? (
-        <p className="mt-6 rounded border border-neutral-300 bg-neutral-50 p-3 text-sm text-neutral-600">
-          You haven&apos;t drafted anything yet. Use &quot;Suggest fix&quot; on a finding in Detect,
-          or ask for an edit in Ask.
-        </p>
-      ) : (
-        <ul className="mt-6 space-y-5">
-          {drafts.map((d) => {
-            const submitted = d.requester_edited_text ?? d.ai_draft_text;
-            const reviewerChanged =
-              d.reviewer_edited_text !== null && d.reviewer_edited_text.trim() !== submitted.trim();
-            return (
-              <li key={d.suggestion_id} className="rounded border border-neutral-300 p-4 text-sm">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span
-                    className={`rounded px-1.5 py-0.5 text-xs font-semibold uppercase ${STATUS_STYLES[d.status]}`}
-                  >
-                    {STATUS_LABELS[d.status]}
-                  </span>
-                  <Link
-                    href={`/contracts/${d.contract_id}`}
-                    className="font-medium text-sky-700 underline"
-                  >
-                    {d.filename ?? d.contract_id}
-                  </Link>
-                  <span className="text-xs text-neutral-400">
-                    drafted {new Date(d.created_at).toLocaleString()}
-                    {d.submitted_at && ` · submitted ${new Date(d.submitted_at).toLocaleString()}`}
-                    {d.decided_at && ` · decided ${new Date(d.decided_at).toLocaleString()}`}
-                  </span>
-                </div>
-
-                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <TextBox title="Original clause" tone="border-red-300 bg-red-50">
-                    <p className="whitespace-pre-wrap">{d.original_clause_text}</p>
-                  </TextBox>
-                  <TextBox title="AI draft" tone="border-sky-300 bg-sky-50">
-                    <p className="whitespace-pre-wrap">{d.ai_draft_text}</p>
-                  </TextBox>
-                </div>
-
-                {d.requester_edited_text && (
-                  <div className="mt-3">
-                    <TextBox title="Your edited version (what you submitted)" tone="border-violet-300 bg-violet-50">
-                      <DiffText before={d.ai_draft_text} after={d.requester_edited_text} />
-                      <p className="mt-1 text-[11px] text-neutral-500">
-                        Highlighted = what you changed from the AI draft.
-                      </p>
-                    </TextBox>
-                  </div>
-                )}
-
-                {d.status === "draft" && (
-                  <DraftSubmitPanel
-                    suggestionId={d.suggestion_id}
-                    aiDraft={d.ai_draft_text}
-                    rationale={d.rationale}
-                    onSubmitted={() => load()}
-                  />
-                )}
-
-                {(d.status === "approved" || d.status === "rejected") && (
-                  <div className="mt-3 space-y-2">
-                    {d.status === "approved" && (
-                      <TextBox
-                        title={
-                          reviewerChanged
-                            ? "Reviewer's approved version — they changed your text"
-                            : "Approved as submitted — the reviewer made no changes"
-                        }
-                        tone="border-emerald-300 bg-emerald-50"
-                      >
-                        {reviewerChanged && d.reviewer_edited_text ? (
-                          <>
-                            <DiffText before={submitted} after={d.reviewer_edited_text} />
-                            <p className="mt-1 text-[11px] text-neutral-500">
-                              <mark className="rounded bg-emerald-200 px-0.5">Green</mark> = added by
-                              the reviewer, <del className="rounded bg-red-100 px-0.5">red</del> =
-                              removed from what you submitted.
-                            </p>
-                          </>
-                        ) : (
-                          <p className="whitespace-pre-wrap">{submitted}</p>
-                        )}
-                      </TextBox>
-                    )}
-                    {d.reviewer_note && (
-                      <p className="text-xs">
-                        <span className="font-semibold">Reviewer&apos;s note: </span>
-                        <span className="italic">{d.reviewer_note}</span>
-                      </p>
-                    )}
-                    {d.status === "approved" && d.document_version_id && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          downloadDocumentVersion(d.document_version_id!, `${d.contract_id}_updated.docx`)
-                        }
-                        className="text-xs font-semibold text-sky-700 underline"
-                      >
-                        Download the updated document
-                      </button>
-                    )}
-                  </div>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </main>
+    <Suspense fallback={null}>
+      <DraftsView />
+    </Suspense>
   );
 }

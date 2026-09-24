@@ -1,14 +1,18 @@
 "use client";
 
 import Link from "next/link";
+import { CheckCircle2 } from "lucide-react";
 import { useState } from "react";
+import { Button } from "@/components/ui/Button";
+import { Alert } from "@/components/ui/Feedback";
+import { Textarea } from "@/components/ui/Field";
 import { submitDraft, type DraftInfo } from "@/lib/api";
 
-/** Shown wherever a fresh AI draft appears (Suggest fix on /detect, an edit
- * instruction in Ask, a draft in My Drafts). The requester previews the AI's
- * text, can edit it to match their company's requirements, and only then
- * submits it — as the AI draft untouched, or as their own edited version.
- * Nothing reaches a reviewer before this button. */
+/** Shown wherever a fresh AI draft appears (Suggest fix, an edit instruction in
+ * Ask, a draft in My Drafts). The requester previews the AI's text, can edit it
+ * to match their company's requirements, and only then submits it — as the AI
+ * draft untouched, or as their own edited version. Nothing reaches a reviewer
+ * before this button. */
 export default function DraftSubmitPanel({
   suggestionId,
   aiDraft,
@@ -43,62 +47,59 @@ export default function DraftSubmitPanel({
 
   if (submitted) {
     return (
-      <div className="mt-3 rounded border border-emerald-300 bg-emerald-50 p-3 text-xs text-emerald-900">
-        <p className="font-semibold">
-          Submitted for review{submitted.requester_edited_text ? " (your edited version)" : " (AI draft)"}.
-        </p>
-        <p className="mt-1">
-          A reviewer will decide it and you&apos;ll get a notification.{" "}
-          <Link href="/my-drafts" className="font-semibold underline">
-            Track it in My Drafts →
-          </Link>
-        </p>
+      <div className="mt-3 flex gap-2.5 rounded-md border border-success/25 bg-success-soft px-3.5 py-3 text-[13px] text-success-ink">
+        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+        <div>
+          <p className="font-semibold">
+            Submitted for review{submitted.requester_edited_text ? " — your edited version" : " — the AI draft"}.
+          </p>
+          <p className="mt-0.5">
+            A reviewer will decide it and you&apos;ll be notified.{" "}
+            <Link href="/my-drafts" className="font-medium underline underline-offset-2">
+              Track it in My Drafts
+            </Link>
+          </p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="mt-3 rounded border border-neutral-300 bg-white/80 p-3 text-neutral-800">
-      <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
-        AI draft — not submitted yet. Edit it if you need to, then submit.
+    <div className="mt-3 rounded-md border border-line bg-surface p-3.5">
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+        AI draft — not submitted yet
       </p>
-      <textarea
-        className="mt-2 w-full rounded border border-neutral-300 p-2 text-sm"
+      <p className="mt-0.5 text-xs text-muted">
+        Edit it if it needs to match your company&apos;s requirements, then submit it for review.
+      </p>
+      <Textarea
+        className="mt-2.5 text-[13px]"
         rows={6}
         value={text}
+        aria-label="Draft text"
         onChange={(e) => setText(e.target.value)}
       />
       {rationale && (
-        <p className="mt-1 text-xs text-neutral-600">
-          <span className="font-semibold">Why: </span>
+        <p className="mt-2 text-xs text-muted">
+          <span className="font-semibold text-ink">Why this wording: </span>
           {rationale}
         </p>
       )}
       {error && (
-        <p className="mt-2 rounded border border-red-400 bg-red-50 p-2 text-xs text-red-800">
+        <Alert tone="danger" className="mt-3">
           {error}
-        </p>
+        </Alert>
       )}
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          disabled={busy || !text.trim()}
-          onClick={onSubmit}
-          className="rounded bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
-        >
-          {busy ? "Submitting…" : edited ? "Submit my edited version" : "Submit AI draft"}
-        </button>
+        <Button variant="primary" size="sm" loading={busy} disabled={!text.trim()} onClick={onSubmit}>
+          {edited ? "Submit my edited version" : "Submit AI draft"}
+        </Button>
         {edited && (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => setText(aiDraft)}
-            className="rounded border border-neutral-400 px-3 py-1.5 text-xs font-semibold"
-          >
+          <Button size="sm" disabled={busy} onClick={() => setText(aiDraft)}>
             Reset to AI draft
-          </button>
+          </Button>
         )}
-        <span className="text-[11px] text-neutral-500">
+        <span className="text-xs text-muted">
           {edited ? "You've changed the AI's text." : "Unchanged — submits the AI's text as-is."}
         </span>
       </div>

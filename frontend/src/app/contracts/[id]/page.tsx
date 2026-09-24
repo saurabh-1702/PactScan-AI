@@ -1,213 +1,233 @@
 "use client";
 
+import Link from "next/link";
+import { ArrowLeft, CheckCircle2, Download, History } from "lucide-react";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
+import FindingCard from "@/components/FindingCard";
+import { Button } from "@/components/ui/Button";
+import { Dialog } from "@/components/ui/Dialog";
+import { Alert, Badge, EmptyState, Skeleton } from "@/components/ui/Feedback";
+import { Field, Textarea } from "@/components/ui/Field";
+import { Page } from "@/components/ui/Layout";
+import { SEVERITY_ORDER } from "@/components/ui/Severity";
+import { Tab, TabList, TabPanel, Tabs } from "@/components/ui/Tabs";
+import { Table, Td, Th, THead, Tr } from "@/components/ui/Table";
+import { useToast } from "@/components/ui/Toast";
 import {
   createRestoreRequest,
   downloadDocumentVersion,
   getDetectReport,
   getDocumentVersions,
-  type DetectReport,
   type DocumentVersionInfo,
-  type Severity,
 } from "@/lib/api";
-
-const SEVERITY_STYLES: Record<Severity, string> = {
-  HIGH: "border-red-500 bg-red-50 text-red-900",
-  MEDIUM: "border-amber-500 bg-amber-50 text-amber-900",
-  LOW: "border-sky-500 bg-sky-50 text-sky-900",
-};
+import { formatDateTime } from "@/lib/format";
+import { useLoad } from "@/lib/hooks";
+import { useSession } from "@/lib/session";
 
 export default function ContractDetailPage() {
   const params = useParams<{ id: string }>();
   const contractId = params.id;
+  const toast = useToast();
+  const { can } = useSession();
 
-  const [report, setReport] = useState<DetectReport | null>(null);
-  const [versions, setVersions] = useState<DocumentVersionInfo[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
-  const [restoringId, setRestoringId] = useState<string | null>(null);
+  const report = useLoad(() => getDetectReport(contractId), contractId);
+  const versions = useLoad(() => getDocumentVersions(contractId), contractId);
+
+  const [restoreTarget, setRestoreTarget] = useState<DocumentVersionInfo | null>(null);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
 
-  async function load() {
-    try {
-      const [r, v] = await Promise.all([
-        getDetectReport(contractId),
-        getDocumentVersions(contractId),
-      ]);
-      setReport(r);
-      setVersions(v);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load contract");
-    }
-  }
-
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contractId]);
-
-  function showToast(msg: string) {
-    setToast(msg);
-    setTimeout(() => setToast(null), 4000);
-  }
+  const findings = useMemo(
+    () =>
+      [...(report.data?.findings ?? [])].sort(
+        (a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity],
+      ),
+    [report.data],
+  );
+  const latest = versions.data?.length ? Math.max(...versions.data.map((v) => v.version_number)) : null;
 
   async function onDownload(v: DocumentVersionInfo) {
     try {
-      await downloadDocumentVersion(v.id, `${contractId}_v${v.version_number}.docx`);
+      await downloadDocumentVersion(v.id, `${report.data?.filename ?? contractId}_v${v.version_number}.docx`);
     } catch (err) {
-      showToast(`Download failed: ${err instanceof Error ? err.message : "unknown error"}`);
+      toast.error(`Download failed: ${err instanceof Error ? err.message : "unknown error"}`);
     }
   }
 
-  async function onRequestRestore(v: DocumentVersionInfo) {
+  async function onRequestRestore() {
+    if (!restoreTarget) return;
     setBusy(true);
     try {
-      await createRestoreRequest(contractId, v.id, reason);
-      showToast(`Restore requested for v${v.version_number} — a reviewer must approve it.`);
-      setRestoringId(null);
+      await createRestoreRequest(contractId, restoreTarget.id, reason.trim());
+      toast.success(`Restore of v${restoreTarget.version_number} requested — a reviewer will decide it.`);
+      setRestoreTarget(null);
       setReason("");
     } catch (err) {
-      showToast(`Failed: ${err instanceof Error ? err.message : "unknown error"}`);
+      toast.error(err instanceof Error ? err.message : "Could not submit the request");
     } finally {
       setBusy(false);
     }
   }
 
-  const latestVersionNumber = versions && versions.length > 0
-    ? Math.max(...versions.map((v) => v.version_number))
-    : null;
-
   return (
-    <main className="mx-auto max-w-3xl px-6 py-10">
-      <h1 className="text-2xl font-semibold tracking-tight">
-        {report?.filename ?? contractId}
-      </h1>
-      <p className="mt-1 text-xs text-neutral-400">contract {contractId}</p>
+    <Page>
+      <Link
+        href="/dashboard"
+        className="mb-4 inline-flex items-center gap-1 text-[13px] text-muted hover:text-ink"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" aria-hidden /> Dashboard
+      </Link>
 
-      {toast && (
-        <p className="mt-4 rounded border border-neutral-300 bg-neutral-50 p-3 text-sm">{toast}</p>
-      )}
-      {error && (
-        <p className="mt-4 rounded border border-red-400 bg-red-50 p-3 text-sm text-red-800">
-          {error}
-        </p>
-      )}
-
-      <section className="mt-8">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
-          Current findings ({report?.total_findings ?? "…"})
-        </h2>
-        {report && report.total_findings === 0 && (
-          <p className="mt-3 rounded border border-emerald-400 bg-emerald-50 p-3 text-sm text-emerald-800">
-            No compliance issues detected.
-          </p>
-        )}
-        {report && report.total_findings > 0 && (
-          <ul className="mt-3 space-y-2">
-            {report.findings.map((f) => (
-              <li
-                key={f.finding_id}
-                className={`rounded border-l-4 p-3 text-sm ${SEVERITY_STYLES[f.severity]}`}
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded bg-white/60 px-1.5 py-0.5 text-xs font-semibold">
-                    {f.severity}
-                  </span>
-                  <span className="font-medium">{f.rule_or_regulation_violated}</span>
-                  <span className="text-xs opacity-70">page {f.page_number}</span>
-                </div>
-                <p className="mt-1 opacity-90">{f.explanation}</p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="mt-10">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
-          Version history
-        </h2>
-        {versions === null ? (
-          <p className="mt-3 text-sm text-neutral-500">Loading…</p>
-        ) : versions.length === 0 ? (
-          <p className="mt-3 text-sm text-neutral-500">No document versions on file yet.</p>
+      <header className="mb-6">
+        {report.loading && !report.data ? (
+          <Skeleton className="h-7 w-72" />
         ) : (
-          <ul className="mt-3 space-y-2">
-            {versions.map((v) => {
-              const isCurrent = v.version_number === latestVersionNumber;
-              const isRestoring = restoringId === v.id;
-              return (
-                <li key={v.id} className="rounded border border-neutral-200 p-3 text-sm">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-medium">v{v.version_number}</span>
-                    {isCurrent && (
-                      <span className="rounded bg-neutral-200 px-1.5 py-0.5 text-xs font-semibold">
-                        current
-                      </span>
-                    )}
-                    <span className="text-xs text-neutral-400">
-                      {new Date(v.created_at).toLocaleString()}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => onDownload(v)}
-                      className="ml-auto text-xs font-semibold text-sky-700 underline"
-                    >
-                      Download
-                    </button>
-                    {!isCurrent && !isRestoring && (
-                      <button
-                        type="button"
-                        onClick={() => setRestoringId(v.id)}
-                        className="text-xs font-semibold text-amber-700 underline"
-                      >
-                        Request Restore
-                      </button>
-                    )}
-                  </div>
-
-                  {isRestoring && (
-                    <div className="mt-3 rounded border border-amber-300 bg-amber-50 p-2">
-                      <p className="text-xs font-semibold uppercase text-amber-700">
-                        Why should this version be restored?
-                      </p>
-                      <textarea
-                        className="mt-1 w-full rounded border border-neutral-300 p-2 text-sm"
-                        rows={2}
-                        placeholder="e.g. The approved edit introduced an error we need to undo."
-                        value={reason}
-                        onChange={(e) => setReason(e.target.value)}
-                      />
-                      <div className="mt-2 flex gap-2">
-                        <button
-                          type="button"
-                          disabled={busy || !reason.trim()}
-                          onClick={() => onRequestRestore(v)}
-                          className="rounded bg-amber-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
-                        >
-                          {busy ? "Submitting…" : "Submit request"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setRestoringId(null);
-                            setReason("");
-                          }}
-                          className="rounded border border-neutral-400 px-3 py-1.5 text-xs font-semibold"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
+          <h1 className="text-xl font-semibold tracking-tight text-ink">
+            {report.data?.filename ?? "Contract"}
+          </h1>
         )}
-      </section>
-    </main>
+        <p className="mt-1 text-xs text-muted">
+          {report.data?.timestamp && <>Last scanned {formatDateTime(report.data.timestamp)} · </>}
+          <span className="font-mono">{contractId}</span>
+        </p>
+      </header>
+
+      {report.error && !report.data && (
+        <Alert tone="danger" title="Couldn't open this contract">
+          {report.error}
+        </Alert>
+      )}
+
+      {(!report.error || report.data) && (
+        <Tabs defaultValue="findings">
+          <TabList label="Contract sections">
+            <Tab value="findings" count={report.data?.total_findings}>
+              Findings
+            </Tab>
+            <Tab value="versions" count={versions.data?.length}>
+              Versions
+            </Tab>
+          </TabList>
+
+          <TabPanel value="findings">
+            {report.loading && !report.data ? (
+              <div className="space-y-3">
+                <Skeleton className="h-28" />
+                <Skeleton className="h-28" />
+              </div>
+            ) : findings.length === 0 ? (
+              <Alert tone="success">
+                <span className="inline-flex items-center gap-1.5">
+                  <CheckCircle2 className="h-4 w-4" aria-hidden /> No compliance issues found in this
+                  contract.
+                </span>
+              </Alert>
+            ) : (
+              <ul className="space-y-3">
+                {findings.map((f) => (
+                  <FindingCard key={f.finding_id} finding={f} />
+                ))}
+              </ul>
+            )}
+          </TabPanel>
+
+          <TabPanel value="versions">
+            {versions.loading && !versions.data ? (
+              <Skeleton className="h-32" />
+            ) : versions.error && !versions.data ? (
+              <Alert tone="danger">{versions.error}</Alert>
+            ) : (versions.data?.length ?? 0) === 0 ? (
+              <EmptyState icon={History} title="No versions on file">
+                A version is stored when the contract is scanned, and another each time a reviewer
+                approves a change.
+              </EmptyState>
+            ) : (
+              <>
+                <Table caption="Document versions">
+                  <THead>
+                    <tr>
+                      <Th>Version</Th>
+                      <Th>Created</Th>
+                      <Th>Origin</Th>
+                      <Th align="right">
+                        <span className="sr-only">Actions</span>
+                      </Th>
+                    </tr>
+                  </THead>
+                  <tbody>
+                    {[...versions.data!].reverse().map((v) => (
+                      <Tr key={v.id}>
+                        <Td>
+                          <span className="font-medium">v{v.version_number}</span>
+                          {v.version_number === latest && (
+                            <Badge tone="info" className="ml-2">
+                              Current
+                            </Badge>
+                          )}
+                        </Td>
+                        <Td muted>{formatDateTime(v.created_at)}</Td>
+                        <Td muted>{v.approval_id ? "Approved change or restore" : "Original upload"}</Td>
+                        <Td align="right">
+                          <span className="inline-flex gap-2">
+                            <Button size="sm" onClick={() => onDownload(v)}>
+                              <Download className="h-3.5 w-3.5" aria-hidden /> Download
+                            </Button>
+                            {v.version_number !== latest && can("restore.request") && (
+                              <Button size="sm" onClick={() => setRestoreTarget(v)}>
+                                Request restore
+                              </Button>
+                            )}
+                          </span>
+                        </Td>
+                      </Tr>
+                    ))}
+                  </tbody>
+                </Table>
+                <p className="mt-3 text-xs text-muted">
+                  Restoring never overwrites anything: an approved restore copies the older version
+                  forward as a new version, so every earlier version stays downloadable.
+                </p>
+              </>
+            )}
+          </TabPanel>
+        </Tabs>
+      )}
+
+      <Dialog
+        open={!!restoreTarget}
+        onOpenChange={(o) => {
+          if (!o) {
+            setRestoreTarget(null);
+            setReason("");
+          }
+        }}
+        title={`Request restore of v${restoreTarget?.version_number ?? ""}`}
+        description="A reviewer must approve this before anything changes."
+        footer={
+          <>
+            <Button onClick={() => setRestoreTarget(null)} disabled={busy}>
+              Cancel
+            </Button>
+            <Button variant="primary" loading={busy} disabled={!reason.trim()} onClick={onRequestRestore}>
+              Submit request
+            </Button>
+          </>
+        }
+      >
+        <Field label="Why should this version be restored?">
+          {(p) => (
+            <Textarea
+              {...p}
+              autoFocus
+              rows={4}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="e.g. The approved edit introduced an error we need to undo."
+            />
+          )}
+        </Field>
+      </Dialog>
+    </Page>
   );
 }

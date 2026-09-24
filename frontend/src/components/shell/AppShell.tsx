@@ -96,6 +96,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <SessionProvider value={user}>
+      <a
+        href="#main"
+        className="sr-only z-[70] rounded-md bg-surface px-3 py-2 text-[13px] font-medium text-ink shadow-md focus:not-sr-only focus:fixed focus:left-3 focus:top-3"
+      >
+        Skip to content
+      </a>
       <div className="flex h-screen overflow-hidden">
         {/* Desktop sidebar */}
         <aside
@@ -162,7 +168,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           </header>
 
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">{children}</div>
+          <main id="main" tabIndex={-1} className="flex min-h-0 flex-1 flex-col overflow-y-auto focus:outline-none">
+            {children}
+          </main>
         </div>
       </div>
 

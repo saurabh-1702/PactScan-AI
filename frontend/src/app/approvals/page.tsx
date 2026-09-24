@@ -1,544 +1,578 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { AlertTriangle, CheckSquare, Download } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useMemo, useState } from "react";
+import DiffText, { DiffLegend } from "@/components/DiffText";
+import TextPanel, { PlainText } from "@/components/TextPanel";
+import { Button } from "@/components/ui/Button";
+import { Dialog } from "@/components/ui/Dialog";
+import { Alert, Badge, EmptyState, Skeleton } from "@/components/ui/Feedback";
+import { Field, Textarea } from "@/components/ui/Field";
+import { Page, PageHeader } from "@/components/ui/Layout";
+import { Tab, TabList, TabPanel, Tabs } from "@/components/ui/Tabs";
+import { Table, Td, Th, THead, Tr } from "@/components/ui/Table";
+import { useToast } from "@/components/ui/Toast";
 import {
   decideApproval,
   decideRestoreRequest,
   downloadDocumentVersion,
   getAllApprovals,
+  getContracts,
   getDocumentVersions,
   getRestoreRequests,
   type Approval,
-  type DocumentVersionInfo,
   type RestoreRequestInfo,
 } from "@/lib/api";
+import { formatDateTime, timeAgo } from "@/lib/format";
+import { useLoad } from "@/lib/hooks";
 
-const STATUS_STYLES: Record<Approval["status"], string> = {
-  pending: "bg-amber-100 text-amber-800",
-  approved: "bg-emerald-100 text-emerald-800",
-  rejected: "bg-red-100 text-red-800",
+type Tone = "warn" | "success" | "danger";
+const DECISION_TONE: Record<Approval["status"], Tone> = {
+  pending: "warn",
+  approved: "success",
+  rejected: "danger",
+};
+const DECISION_LABEL: Record<Approval["status"], string> = {
+  pending: "Pending",
+  approved: "Approved",
+  rejected: "Rejected",
 };
 
-export default function ApprovalsPage() {
-  const [approvals, setApprovals] = useState<Approval[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editedText, setEditedText] = useState<Record<string, string>>({});
-  const [rejectingId, setRejectingId] = useState<string | null>(null);
-  const [rejectNote, setRejectNote] = useState<Record<string, string>>({});
-  const [toast, setToast] = useState<string | null>(null);
-  const [versionsByContract, setVersionsByContract] = useState<
-    Record<string, DocumentVersionInfo[]>
-  >({});
+interface HistoryRow {
+  key: string;
+  kind: "Draft edit" | "Restore";
+  contractId: string;
+  requester: string | null;
+  status: Approval["status"];
+  decidedBy: string | null;
+  decidedAt: string | null;
+  note: string | null;
+  detail: string;
+}
 
-  const [restoreRequests, setRestoreRequests] = useState<RestoreRequestInfo[] | null>(null);
-  const [restoreBusyId, setRestoreBusyId] = useState<string | null>(null);
-  const [restoreRejectingId, setRestoreRejectingId] = useState<string | null>(null);
-  const [restoreRejectNote, setRestoreRejectNote] = useState<Record<string, string>>({});
+function ApprovalsView() {
+  const toast = useToast();
+  const router = useRouter();
+  const params = useSearchParams();
+  const tab = params.get("tab") === "restore" ? "restore" : params.get("tab") === "history" ? "history" : "edits";
 
-  async function load() {
-    try {
-      // fetch ALL approvals, not just pending — a decided item's download link
-      // must stay reachable after it leaves the pending queue.
-      const list = await getAllApprovals();
-      setApprovals(list);
-      const contractIds = [...new Set(list.map((a) => a.contract_id))];
-      for (const cid of contractIds) {
-        getDocumentVersions(cid)
-          .then((versions) => setVersionsByContract((prev) => ({ ...prev, [cid]: versions })))
-          .catch(() => {});
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load approvals");
-    }
-    try {
-      const restores = await getRestoreRequests();
-      setRestoreRequests(restores);
-      const restoreContractIds = [...new Set(restores.map((r) => r.contract_id))];
-      for (const cid of restoreContractIds) {
-        getDocumentVersions(cid)
-          .then((versions) => setVersionsByContract((prev) => ({ ...prev, [cid]: versions })))
-          .catch(() => {});
-      }
-    } catch {
-      /* non-fatal — restore section just stays empty */
-    }
-  }
+  const approvals = useLoad(getAllApprovals);
+  const restores = useLoad(getRestoreRequests);
+  const contracts = useLoad(getContracts);
 
-  useEffect(() => {
-    load();
-  }, []);
+  const filenames = useMemo(
+    () => new Map((contracts.data ?? []).map((c) => [c.contract_id, c.filename])),
+    [contracts.data],
+  );
+  const nameOf = (id: string) => filenames.get(id) ?? id;
 
-  function showToast(msg: string) {
-    setToast(msg);
-    setTimeout(() => setToast(null), 4000);
-  }
+  const pendingEdits = (approvals.data ?? []).filter((a) => a.status === "pending");
+  const pendingRestores = (restores.data ?? []).filter((r) => r.status === "pending");
 
-  async function onDownload(versionId: string, contractId: string, versionNumber: number) {
-    try {
-      await downloadDocumentVersion(versionId, `${contractId}_v${versionNumber}.docx`);
-    } catch (err) {
-      showToast(`Download failed: ${err instanceof Error ? err.message : "unknown error"}`);
-    }
-  }
+  const [reviewId, setReviewId] = useState<string | null>(null);
+  const [restoreId, setRestoreId] = useState<string | null>(null);
+  const review = approvals.data?.find((a) => a.id === reviewId) ?? null;
+  const restore = restores.data?.find((r) => r.id === restoreId) ?? null;
 
-  async function onDecide(
-    a: Approval,
-    decision: "approved" | "rejected",
-    useEdit: boolean,
-    note?: string,
-  ) {
-    setBusyId(a.id);
-    try {
-      await decideApproval(a.id, decision, {
-        editedText: useEdit ? editedText[a.id] : undefined,
-        note,
+  const history = useMemo<HistoryRow[]>(() => {
+    const rows: HistoryRow[] = [];
+    for (const a of approvals.data ?? []) {
+      if (a.status === "pending") continue;
+      rows.push({
+        key: a.id,
+        kind: "Draft edit",
+        contractId: a.contract_id,
+        requester: a.requested_by_email,
+        status: a.status,
+        decidedBy: a.decided_by_email,
+        decidedAt: a.decided_at,
+        note: a.reviewer_note,
+        detail: a.edited_text ? "Approved with the reviewer's own edit" : a.proposed_text,
       });
-      showToast(
-        decision === "approved"
-          ? `Approved — the redline was written into a new document version.`
-          : `Rejected — the requester will see your note, and no file was touched.`,
-      );
-      setEditingId(null);
-      setRejectingId(null);
-      await load();
-    } catch (err) {
-      showToast(`Failed: ${err instanceof Error ? err.message : "unknown error"}`);
-    } finally {
-      setBusyId(null);
     }
+    for (const r of restores.data ?? []) {
+      if (r.status === "pending") continue;
+      rows.push({
+        key: r.id,
+        kind: "Restore",
+        contractId: r.contract_id,
+        requester: r.requested_by_email,
+        status: r.status,
+        decidedBy: r.decided_by_email,
+        decidedAt: r.decided_at,
+        note: r.reviewer_note,
+        detail: `Restore to v${r.target_version_number}`,
+      });
+    }
+    return rows.sort((a, b) => (b.decidedAt ?? "").localeCompare(a.decidedAt ?? ""));
+  }, [approvals.data, restores.data]);
+
+  function setTab(next: string) {
+    router.replace(next === "edits" ? "/approvals" : `/approvals?tab=${next}`);
   }
 
-  async function onDecideRestore(
-    r: RestoreRequestInfo,
-    decision: "approved" | "rejected",
-    note?: string,
-  ) {
-    setRestoreBusyId(r.id);
+  async function downloadLatest(contractId: string) {
     try {
-      await decideRestoreRequest(r.id, decision, note);
-      showToast(
-        decision === "approved"
-          ? `Approved — the target version was copied forward as a new version.`
-          : `Rejected — the requester will see your note.`,
-      );
-      setRestoreRejectingId(null);
-      await load();
+      const versions = await getDocumentVersions(contractId);
+      const latest = versions[versions.length - 1];
+      if (!latest) throw new Error("no version on file");
+      await downloadDocumentVersion(latest.id, `${nameOf(contractId)}_v${latest.version_number}.docx`);
     } catch (err) {
-      showToast(`Failed: ${err instanceof Error ? err.message : "unknown error"}`);
-    } finally {
-      setRestoreBusyId(null);
+      toast.error(`Download failed: ${err instanceof Error ? err.message : "unknown error"}`);
     }
   }
 
-  const pending = (approvals ?? []).filter((a) => a.status === "pending");
-  const decided = (approvals ?? [])
-    .filter((a) => a.status !== "pending")
-    .sort((a, b) => (b.decided_at ?? "").localeCompare(a.decided_at ?? ""));
+  function afterDecision(message: string) {
+    toast.success(message);
+    approvals.reload();
+    restores.reload();
+  }
 
-  const pendingRestores = (restoreRequests ?? []).filter((r) => r.status === "pending");
-  const decidedRestores = (restoreRequests ?? [])
-    .filter((r) => r.status !== "pending")
-    .sort((a, b) => (b.decided_at ?? "").localeCompare(a.decided_at ?? ""));
+  const loading = approvals.loading && !approvals.data;
 
   return (
-    <main className="mx-auto max-w-4xl px-6 py-10">
-      <h1 className="text-2xl font-semibold tracking-tight">
-        PactScan AI — Approval Queue
-      </h1>
-      <p className="mt-1 text-sm text-neutral-500">
-        Every Suggest output lands here as a pending approval. Nothing is ever
-        written into a real document until you explicitly decide it here.
-      </p>
+    <Page>
+      <PageHeader
+        title="Approvals"
+        description="Nothing is written into a real document until a reviewer decides it here."
+      />
+      {approvals.error && !approvals.data && <Alert tone="danger">{approvals.error}</Alert>}
 
-      {toast && (
-        <p className="mt-4 rounded border border-neutral-300 bg-neutral-50 p-3 text-sm">
-          {toast}
-        </p>
+      <Tabs value={tab} onValueChange={setTab}>
+        <TabList label="Approval queues">
+          <Tab value="edits" count={pendingEdits.length}>
+            Draft edits
+          </Tab>
+          <Tab value="restore" count={pendingRestores.length}>
+            Restore requests
+          </Tab>
+          <Tab value="history">History</Tab>
+        </TabList>
+
+        <TabPanel value="edits">
+          {loading ? (
+            <Skeleton className="h-40" />
+          ) : pendingEdits.length === 0 ? (
+            <EmptyState icon={CheckSquare} title="No draft edits are waiting">
+              When someone submits a drafted fix, it appears here for you to accept, edit or reject.
+            </EmptyState>
+          ) : (
+            <Table caption="Draft edits waiting for review">
+              <THead>
+                <tr>
+                  <Th>Document</Th>
+                  <Th>Requested by</Th>
+                  <Th>Submitted</Th>
+                  <Th>Wording</Th>
+                </tr>
+              </THead>
+              <tbody>
+                {pendingEdits.map((a) => (
+                  <Tr key={a.id} onClick={() => setReviewId(a.id)}>
+                    <Td>
+                      <span className="font-medium">{nameOf(a.contract_id)}</span>
+                      <span className="mt-0.5 line-clamp-1 max-w-sm text-xs text-muted">
+                        {a.proposed_text}
+                      </span>
+                    </Td>
+                    <Td muted>{a.requested_by_email ?? "Unknown"}</Td>
+                    <Td muted>{timeAgo(a.created_at)}</Td>
+                    <Td>
+                      <Badge tone={a.requester_edited_text ? "info" : "neutral"}>
+                        {a.requester_edited_text ? "Edited by requester" : "AI draft"}
+                      </Badge>
+                    </Td>
+                  </Tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
+        </TabPanel>
+
+        <TabPanel value="restore">
+          {restores.loading && !restores.data ? (
+            <Skeleton className="h-40" />
+          ) : pendingRestores.length === 0 ? (
+            <EmptyState icon={CheckSquare} title="No restore requests are waiting">
+              A request to bring back an older version of a contract will appear here.
+            </EmptyState>
+          ) : (
+            <Table caption="Restore requests waiting for a decision">
+              <THead>
+                <tr>
+                  <Th>Document</Th>
+                  <Th>Restore to</Th>
+                  <Th>Requested by</Th>
+                  <Th>Submitted</Th>
+                  <Th>
+                    <span className="sr-only">Flags</span>
+                  </Th>
+                </tr>
+              </THead>
+              <tbody>
+                {pendingRestores.map((r) => (
+                  <Tr key={r.id} onClick={() => setRestoreId(r.id)}>
+                    <Td className="font-medium">{nameOf(r.contract_id)}</Td>
+                    <Td>v{r.target_version_number}</Td>
+                    <Td muted>{r.requested_by_email ?? "Unknown"}</Td>
+                    <Td muted>{timeAgo(r.created_at)}</Td>
+                    <Td>
+                      {r.abuse_flagged && (
+                        <Badge tone="danger">
+                          <AlertTriangle className="mr-1 h-3 w-3" aria-hidden /> Repeated restores
+                        </Badge>
+                      )}
+                    </Td>
+                  </Tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
+        </TabPanel>
+
+        <TabPanel value="history">
+          {loading ? (
+            <Skeleton className="h-40" />
+          ) : history.length === 0 ? (
+            <EmptyState icon={CheckSquare} title="Nothing decided yet">
+              Decisions you make on drafts and restores are recorded here.
+            </EmptyState>
+          ) : (
+            <Table caption="Decision history">
+              <THead>
+                <tr>
+                  <Th>Type</Th>
+                  <Th>Document</Th>
+                  <Th>Requested by</Th>
+                  <Th>Decision</Th>
+                  <Th>Decided</Th>
+                  <Th align="right">
+                    <span className="sr-only">Download</span>
+                  </Th>
+                </tr>
+              </THead>
+              <tbody>
+                {history.map((h) => (
+                  <Tr key={h.key}>
+                    <Td muted>{h.kind}</Td>
+                    <Td>
+                      <span className="font-medium">{nameOf(h.contractId)}</span>
+                      {h.note && <span className="mt-0.5 block text-xs italic text-muted">“{h.note}”</span>}
+                    </Td>
+                    <Td muted>{h.requester ?? "Unknown"}</Td>
+                    <Td>
+                      <Badge tone={DECISION_TONE[h.status]}>{DECISION_LABEL[h.status]}</Badge>
+                    </Td>
+                    <Td muted>
+                      {formatDateTime(h.decidedAt)}
+                      {h.decidedBy && <span className="block text-xs">by {h.decidedBy}</span>}
+                    </Td>
+                    <Td align="right">
+                      {h.status === "approved" && (
+                        <Button size="sm" onClick={() => downloadLatest(h.contractId)}>
+                          <Download className="h-3.5 w-3.5" aria-hidden /> Latest
+                        </Button>
+                      )}
+                    </Td>
+                  </Tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
+        </TabPanel>
+      </Tabs>
+
+      <ReviewSheet
+        approval={review}
+        filename={review ? nameOf(review.contract_id) : ""}
+        onClose={() => setReviewId(null)}
+        onDecided={(m) => {
+          setReviewId(null);
+          afterDecision(m);
+        }}
+      />
+      <RestoreSheet
+        request={restore}
+        filename={restore ? nameOf(restore.contract_id) : ""}
+        onClose={() => setRestoreId(null)}
+        onDecided={(m) => {
+          setRestoreId(null);
+          afterDecision(m);
+        }}
+      />
+    </Page>
+  );
+}
+
+function ReviewSheet({
+  approval: a,
+  filename,
+  onClose,
+  onDecided,
+}: {
+  approval: Approval | null;
+  filename: string;
+  onClose: () => void;
+  onDecided: (message: string) => void;
+}) {
+  const toast = useToast();
+  const [mode, setMode] = useState<"view" | "edit" | "reject">("view");
+  const [edited, setEdited] = useState("");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  function reset() {
+    setMode("view");
+    setEdited("");
+    setNote("");
+  }
+
+  async function decide(decision: "approved" | "rejected") {
+    if (!a) return;
+    setBusy(true);
+    try {
+      await decideApproval(a.id, decision, {
+        editedText: decision === "approved" && mode === "edit" ? edited : undefined,
+        note: decision === "rejected" ? note.trim() || undefined : undefined,
+      });
+      reset();
+      onDecided(
+        decision === "approved"
+          ? "Approved — the change was written into a new document version."
+          : "Rejected — the requester will see your reason, and no file was touched.",
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not record the decision");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog
+      variant="sheet"
+      open={!!a}
+      onOpenChange={(o) => {
+        if (!o) {
+          reset();
+          onClose();
+        }
+      }}
+      title={filename || "Review draft edit"}
+      description={
+        a ? `Requested by ${a.requested_by_email ?? "unknown"} · ${formatDateTime(a.created_at)}` : undefined
+      }
+      footer={
+        a && (
+          <>
+            {mode === "view" && (
+              <>
+                <Button onClick={() => setMode("reject")} disabled={busy}>
+                  Reject
+                </Button>
+                <Button
+                  onClick={() => {
+                    setEdited(a.proposed_text);
+                    setMode("edit");
+                  }}
+                  disabled={busy}
+                >
+                  Edit
+                </Button>
+                <Button variant="primary" loading={busy} onClick={() => decide("approved")}>
+                  Accept
+                </Button>
+              </>
+            )}
+            {mode === "edit" && (
+              <>
+                <Button onClick={reset} disabled={busy}>
+                  Cancel
+                </Button>
+                <Button variant="primary" loading={busy} disabled={!edited.trim()} onClick={() => decide("approved")}>
+                  Approve edited version
+                </Button>
+              </>
+            )}
+            {mode === "reject" && (
+              <>
+                <Button onClick={reset} disabled={busy}>
+                  Cancel
+                </Button>
+                <Button variant="danger" loading={busy} onClick={() => decide("rejected")}>
+                  Confirm rejection
+                </Button>
+              </>
+            )}
+          </>
+        )
+      }
+    >
+      {a && (
+        <div className="space-y-4">
+          <TextPanel title="Original clause" tone="danger">
+            <PlainText>{a.original_clause_text}</PlainText>
+          </TextPanel>
+
+          <TextPanel
+            title="Proposed wording"
+            note={a.requester_edited_text ? "edited by the requester" : "AI draft, unchanged"}
+            tone="success"
+          >
+            {mode === "edit" ? (
+              <Textarea
+                aria-label="Your edited wording"
+                autoFocus
+                rows={8}
+                value={edited}
+                onChange={(e) => setEdited(e.target.value)}
+              />
+            ) : (
+              <PlainText>{a.proposed_text}</PlainText>
+            )}
+          </TextPanel>
+
+          {a.requester_edited_text && a.ai_draft_text && mode === "view" && (
+            <details className="rounded-md border border-line bg-surface px-3.5 py-2.5 text-[13px]">
+              <summary className="cursor-pointer font-medium text-ink">
+                What the requester changed from the AI draft
+              </summary>
+              <div className="mt-2">
+                <DiffText before={a.ai_draft_text} after={a.requester_edited_text} />
+                <DiffLegend />
+              </div>
+            </details>
+          )}
+
+          <p className="text-[13px] text-muted">
+            <span className="font-medium text-ink">Rationale: </span>
+            {a.rationale} (confidence {a.confidence})
+          </p>
+
+          {mode === "reject" && (
+            <Field label="Reason for rejection" hint="Shown to whoever requested this fix.">
+              {(p) => (
+                <Textarea
+                  {...p}
+                  autoFocus
+                  rows={3}
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder="e.g. This cap is still too low for our risk tolerance."
+                />
+              )}
+            </Field>
+          )}
+        </div>
       )}
-      {error && (
-        <p className="mt-4 rounded border border-red-400 bg-red-50 p-3 text-sm text-red-800">
-          {error}
-        </p>
+    </Dialog>
+  );
+}
+
+function RestoreSheet({
+  request: r,
+  filename,
+  onClose,
+  onDecided,
+}: {
+  request: RestoreRequestInfo | null;
+  filename: string;
+  onClose: () => void;
+  onDecided: (message: string) => void;
+}) {
+  const toast = useToast();
+  const [rejecting, setRejecting] = useState(false);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  function reset() {
+    setRejecting(false);
+    setNote("");
+  }
+
+  async function decide(decision: "approved" | "rejected") {
+    if (!r) return;
+    setBusy(true);
+    try {
+      await decideRestoreRequest(r.id, decision, decision === "rejected" ? note.trim() || undefined : undefined);
+      reset();
+      onDecided(
+        decision === "approved"
+          ? "Approved — the older version was copied forward as a new version."
+          : "Rejected — the requester will see your reason.",
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not record the decision");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog
+      open={!!r}
+      onOpenChange={(o) => {
+        if (!o) {
+          reset();
+          onClose();
+        }
+      }}
+      title={r ? `Restore ${filename} to v${r.target_version_number}` : "Restore request"}
+      description={r ? `Requested by ${r.requested_by_email ?? "unknown"} · ${formatDateTime(r.created_at)}` : undefined}
+      footer={
+        r &&
+        (rejecting ? (
+          <>
+            <Button onClick={reset} disabled={busy}>
+              Cancel
+            </Button>
+            <Button variant="danger" loading={busy} onClick={() => decide("rejected")}>
+              Confirm rejection
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button onClick={() => setRejecting(true)} disabled={busy}>
+              Reject
+            </Button>
+            <Button variant="primary" loading={busy} onClick={() => decide("approved")}>
+              Accept
+            </Button>
+          </>
+        ))
+      }
+    >
+      {r && (
+        <div className="space-y-4">
+          {r.abuse_flagged && (
+            <Alert tone="danger" title="Repeated restores">
+              This contract has had several restores approved recently. Review this request carefully
+              before approving another.
+            </Alert>
+          )}
+          <TextPanel title="Reason given" tone="neutral">
+            <PlainText>{r.reason}</PlainText>
+          </TextPanel>
+          <p className="text-xs text-muted">
+            Approving copies v{r.target_version_number} forward as a new version. Nothing is
+            overwritten.
+          </p>
+          {rejecting && (
+            <Field label="Reason for rejection" hint="Shown to the requester.">
+              {(p) => <Textarea {...p} autoFocus rows={3} value={note} onChange={(e) => setNote(e.target.value)} />}
+            </Field>
+          )}
+        </div>
       )}
+    </Dialog>
+  );
+}
 
-      {approvals === null ? (
-        <p className="mt-6 text-sm text-neutral-500">Loading…</p>
-      ) : (
-        <>
-          <h2 className="mt-8 text-sm font-semibold uppercase tracking-wide text-neutral-500">
-            Pending ({pending.length})
-          </h2>
-          {pending.length === 0 ? (
-            <p className="mt-3 rounded border border-neutral-300 bg-neutral-50 p-3 text-sm text-neutral-600">
-              No pending approvals.
-            </p>
-          ) : (
-            <ul className="mt-3 space-y-4">
-              {pending.map((a) => {
-                const isEditing = editingId === a.id;
-                const isRejecting = rejectingId === a.id;
-                const isBusy = busyId === a.id;
-                const versions = versionsByContract[a.contract_id] ?? [];
-                const latest = versions[versions.length - 1];
-
-                return (
-                  <li key={a.id} className="rounded border border-neutral-300 p-4 text-sm">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="font-medium">{a.clause_id}</span>
-                      <span className="text-xs text-neutral-400">
-                        contract {a.contract_id} · confidence {a.confidence}
-                      </span>
-                    </div>
-                    <p className="mt-1 text-xs text-neutral-500">
-                      Requested by{" "}
-                      <span className="font-medium text-neutral-700">
-                        {a.requested_by_email ?? "unknown"}
-                      </span>{" "}
-                      · {new Date(a.created_at).toLocaleString()}
-                    </p>
-
-                    <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      <div className="rounded border border-red-300 bg-red-50 p-2">
-                        <p className="text-xs font-semibold uppercase text-red-700">Original</p>
-                        <p className="mt-1 whitespace-pre-wrap">{a.original_clause_text}</p>
-                      </div>
-                      <div className="rounded border border-emerald-300 bg-emerald-50 p-2">
-                        <p className="text-xs font-semibold uppercase text-emerald-700">
-                          Proposed{" "}
-                          <span className="font-normal normal-case text-emerald-800">
-                            {a.requester_edited_text
-                              ? "— edited by the requester"
-                              : "— AI draft, unchanged"}
-                          </span>
-                        </p>
-                        {isEditing ? (
-                          <textarea
-                            className="mt-1 w-full rounded border border-neutral-300 p-2 text-sm"
-                            rows={5}
-                            value={editedText[a.id] ?? a.proposed_text}
-                            onChange={(e) =>
-                              setEditedText((prev) => ({ ...prev, [a.id]: e.target.value }))
-                            }
-                          />
-                        ) : (
-                          <p className="mt-1 whitespace-pre-wrap">{a.proposed_text}</p>
-                        )}
-                        {a.requester_edited_text && a.ai_draft_text && (
-                          <details className="mt-2 text-xs text-neutral-600">
-                            <summary className="cursor-pointer font-semibold">
-                              Show the AI&apos;s original draft
-                            </summary>
-                            <p className="mt-1 whitespace-pre-wrap">{a.ai_draft_text}</p>
-                          </details>
-                        )}
-                      </div>
-                    </div>
-
-                    <p className="mt-2 text-xs text-neutral-600">
-                      <span className="font-semibold">Rationale: </span>
-                      {a.rationale}
-                    </p>
-
-                    {isRejecting && (
-                      <div className="mt-3 rounded border border-red-300 bg-red-50 p-2">
-                        <p className="text-xs font-semibold uppercase text-red-700">
-                          Reason for rejection (shown to whoever requested this fix)
-                        </p>
-                        <textarea
-                          className="mt-1 w-full rounded border border-neutral-300 p-2 text-sm"
-                          rows={3}
-                          placeholder="e.g. This cap is still too low for our risk tolerance."
-                          value={rejectNote[a.id] ?? ""}
-                          onChange={(e) =>
-                            setRejectNote((prev) => ({ ...prev, [a.id]: e.target.value }))
-                          }
-                        />
-                      </div>
-                    )}
-
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      {!isEditing && !isRejecting && (
-                        <>
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            onClick={() => onDecide(a, "approved", false)}
-                            className="rounded bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
-                          >
-                            {isBusy ? "Working…" : "Accept"}
-                          </button>
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            onClick={() => setRejectingId(a.id)}
-                            className="rounded bg-red-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
-                          >
-                            Reject
-                          </button>
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            onClick={() => {
-                              setEditingId(a.id);
-                              setEditedText((prev) => ({ ...prev, [a.id]: a.proposed_text }));
-                            }}
-                            className="rounded border border-neutral-400 px-3 py-1.5 text-xs font-semibold disabled:opacity-40"
-                          >
-                            Edit
-                          </button>
-                        </>
-                      )}
-                      {isEditing && (
-                        <>
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            onClick={() => onDecide(a, "approved", true)}
-                            className="rounded bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
-                          >
-                            {isBusy ? "Working…" : "Approve edited"}
-                          </button>
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            onClick={() => setEditingId(null)}
-                            className="rounded border border-neutral-400 px-3 py-1.5 text-xs font-semibold"
-                          >
-                            Cancel
-                          </button>
-                        </>
-                      )}
-                      {isRejecting && (
-                        <>
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            onClick={() => onDecide(a, "rejected", false, rejectNote[a.id])}
-                            className="rounded bg-red-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
-                          >
-                            {isBusy ? "Working…" : "Confirm reject"}
-                          </button>
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            onClick={() => setRejectingId(null)}
-                            className="rounded border border-neutral-400 px-3 py-1.5 text-xs font-semibold"
-                          >
-                            Cancel
-                          </button>
-                        </>
-                      )}
-
-                      {latest && (
-                        <button
-                          type="button"
-                          onClick={() => onDownload(latest.id, a.contract_id, latest.version_number)}
-                          className="ml-auto text-xs font-semibold text-sky-700 underline"
-                        >
-                          Download latest document (v{latest.version_number})
-                        </button>
-                      )}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-
-          <h2 className="mt-10 text-sm font-semibold uppercase tracking-wide text-neutral-500">
-            Decided ({decided.length})
-          </h2>
-          {decided.length === 0 ? (
-            <p className="mt-3 text-sm text-neutral-500">Nothing decided yet.</p>
-          ) : (
-            <ul className="mt-3 space-y-3">
-              {decided.map((a) => {
-                const versions = versionsByContract[a.contract_id] ?? [];
-                const latest = versions[versions.length - 1];
-                return (
-                  <li
-                    key={a.id}
-                    className="rounded border border-neutral-200 p-3 text-sm text-neutral-700"
-                  >
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span
-                        className={`rounded px-1.5 py-0.5 text-xs font-semibold uppercase ${STATUS_STYLES[a.status]}`}
-                      >
-                        {a.status}
-                      </span>
-                      <span className="font-medium">{a.clause_id}</span>
-                      <span className="text-xs text-neutral-400">
-                        contract {a.contract_id} · requested by{" "}
-                        {a.requested_by_email ?? "unknown"} on{" "}
-                        {new Date(a.created_at).toLocaleString()} · decided{" "}
-                        {a.decided_at ? new Date(a.decided_at).toLocaleString() : "—"}
-                      </span>
-                      {a.status === "approved" && latest && (
-                        <button
-                          type="button"
-                          onClick={() => onDownload(latest.id, a.contract_id, latest.version_number)}
-                          className="ml-auto text-xs font-semibold text-sky-700 underline"
-                        >
-                          Download document (v{latest.version_number})
-                        </button>
-                      )}
-                    </div>
-                    {a.reviewer_note && (
-                      <p className="mt-1 text-xs italic text-neutral-500">
-                        Note: {a.reviewer_note}
-                      </p>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-
-          <h2 className="mt-10 text-sm font-semibold uppercase tracking-wide text-neutral-500">
-            Restore requests — pending ({pendingRestores.length})
-          </h2>
-          {pendingRestores.length === 0 ? (
-            <p className="mt-3 rounded border border-neutral-300 bg-neutral-50 p-3 text-sm text-neutral-600">
-              No pending restore requests.
-            </p>
-          ) : (
-            <ul className="mt-3 space-y-4">
-              {pendingRestores.map((r) => {
-                const isBusy = restoreBusyId === r.id;
-                const isRejecting = restoreRejectingId === r.id;
-                return (
-                  <li key={r.id} className="rounded border border-neutral-300 p-4 text-sm">
-                    {r.abuse_flagged && (
-                      <p className="mb-2 rounded border border-red-400 bg-red-50 p-2 text-xs font-semibold text-red-800">
-                        ⚠ This contract has had multiple restores approved recently — review this
-                        request carefully before approving another.
-                      </p>
-                    )}
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="font-medium">
-                        Restore to v{r.target_version_number}
-                      </span>
-                      <span className="text-xs text-neutral-400">
-                        contract {r.contract_id} · requested by{" "}
-                        {r.requested_by_email ?? "unknown"} on{" "}
-                        {new Date(r.created_at).toLocaleString()}
-                      </span>
-                    </div>
-                    <p className="mt-2 text-xs text-neutral-600">
-                      <span className="font-semibold">Reason: </span>
-                      {r.reason}
-                    </p>
-
-                    {isRejecting && (
-                      <div className="mt-3 rounded border border-red-300 bg-red-50 p-2">
-                        <p className="text-xs font-semibold uppercase text-red-700">
-                          Reason for rejection (shown to the requester)
-                        </p>
-                        <textarea
-                          className="mt-1 w-full rounded border border-neutral-300 p-2 text-sm"
-                          rows={2}
-                          value={restoreRejectNote[r.id] ?? ""}
-                          onChange={(e) =>
-                            setRestoreRejectNote((prev) => ({ ...prev, [r.id]: e.target.value }))
-                          }
-                        />
-                      </div>
-                    )}
-
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      {!isRejecting ? (
-                        <>
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            onClick={() => onDecideRestore(r, "approved")}
-                            className="rounded bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
-                          >
-                            {isBusy ? "Working…" : "Accept"}
-                          </button>
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            onClick={() => setRestoreRejectingId(r.id)}
-                            className="rounded bg-red-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
-                          >
-                            Reject
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            onClick={() => onDecideRestore(r, "rejected", restoreRejectNote[r.id])}
-                            className="rounded bg-red-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
-                          >
-                            {isBusy ? "Working…" : "Confirm reject"}
-                          </button>
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            onClick={() => setRestoreRejectingId(null)}
-                            className="rounded border border-neutral-400 px-3 py-1.5 text-xs font-semibold"
-                          >
-                            Cancel
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-
-          <h2 className="mt-10 text-sm font-semibold uppercase tracking-wide text-neutral-500">
-            Restore requests — decided ({decidedRestores.length})
-          </h2>
-          {decidedRestores.length === 0 ? (
-            <p className="mt-3 text-sm text-neutral-500">Nothing decided yet.</p>
-          ) : (
-            <ul className="mt-3 space-y-3">
-              {decidedRestores.map((r) => {
-                const versions = versionsByContract[r.contract_id] ?? [];
-                const latest = versions[versions.length - 1];
-                return (
-                  <li key={r.id} className="rounded border border-neutral-200 p-3 text-sm text-neutral-700">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span
-                        className={`rounded px-1.5 py-0.5 text-xs font-semibold uppercase ${STATUS_STYLES[r.status]}`}
-                      >
-                        {r.status}
-                      </span>
-                      <span className="font-medium">Restore to v{r.target_version_number}</span>
-                      <span className="text-xs text-neutral-400">
-                        contract {r.contract_id} · requested by{" "}
-                        {r.requested_by_email ?? "unknown"} on{" "}
-                        {new Date(r.created_at).toLocaleString()} · decided{" "}
-                        {r.decided_at ? new Date(r.decided_at).toLocaleString() : "—"}
-                      </span>
-                      {r.status === "approved" && latest && (
-                        <button
-                          type="button"
-                          onClick={() => onDownload(latest.id, r.contract_id, latest.version_number)}
-                          className="ml-auto text-xs font-semibold text-sky-700 underline"
-                        >
-                          Download document (v{latest.version_number})
-                        </button>
-                      )}
-                    </div>
-                    {r.reviewer_note && (
-                      <p className="mt-1 text-xs italic text-neutral-500">Note: {r.reviewer_note}</p>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </>
-      )}
-    </main>
+export default function ApprovalsPage() {
+  return (
+    <Suspense fallback={null}>
+      <ApprovalsView />
+    </Suspense>
   );
 }

@@ -630,3 +630,31 @@ The mocked suite uses the in-memory graph, so none of the new Cypher had touched
 ### Line endings
 
 My scripted edits on Windows had silently rewritten 27 files as CRLF (two already committed that way) in a repo that is LF. Normalized back and added a `.gitattributes` (`* text=auto eol=lf`). See Known Issues §13.3.
+
+---
+
+## Frontend redesign (branch `frontend/redesign`)
+
+A ground-up rebuild of the UI to a restrained, enterprise legal-tech look, from the user's own 30-section specification. Before building, the spec was reviewed against the real project and four decisions were taken with the user: **real stage progress** (not a percentage), **Horizon Scanning as an update log plus an admin trigger**, **small read-only backend additions allowed**, and **Lucide + Radix primitives + cmdk** as the only new dependencies (Recharts was removed — the severity chart is a plain stacked bar).
+
+### Design system
+`src/app/globals.css` holds every token (colour, radius, shadow, motion) in one Tailwind `@theme` block, so components use semantic utilities (`bg-canvas`, `text-muted`, `border-line`…) and never a hex value. Light only (`color-scheme: light`, no dark variant), Inter as the only font. The palette is the spec's; two text shades are deliberately a touch darker than the spec's hex values (`--color-muted` #55657A instead of #64748B, and the `-ink` variants of the status colours) so body text clears WCAG AA on the warm canvas. The spec's original values are kept for icons and fills.
+
+### One permission model
+`src/lib/permissions.ts` is the single place that says who may see or do what: a role→permission table, route rules, and the nav list (each item names the permission it needs). The sidebar, the Ctrl+K palette, the route guard and every action button (`can("horizon.trigger")`, `can("restore.request")`…) read from it — replacing the role lists that had been scattered across `AuthGate`, `AppHeader` and individual pages. Role labels are Legal User / Reviewer / Administrator. It only shapes the interface; the API still enforces every permission.
+
+### App shell
+Persistent left sidebar (collapsible, remembered; a drawer on narrow screens), a top bar with the command palette (Ctrl/Cmd+K: pages, contracts, conversations, actions — only what the role may reach), the global process indicator, the notifications popover and a user menu (email, role, organisation, sign out). `AppShell` also owns the route guard. Token and sidebar state are read with `useSyncExternalStore` (see Known Issues §14.2).
+
+### Pages
+Dashboard (needs-attention list, stacked severity bar, pipeline, recent documents, recent activity — real numbers only), Detect (drag-and-drop, real stage progress, findings), Ask (answer -> quoted evidence -> sources, suggested questions, attach), My Drafts (searchable/filterable table + detail sheet with the three texts), Approvals (tabs: draft edits / restore requests / history, review sheet), Horizon Scanning (update log for every role, admin-only "Simulate an update" dialog, the "simulated" disclaimer kept), contract page (findings + versions + restore dialog), notifications, login. **Horizon Scanning moved from `/admin/horizon-scanning` to `/horizon-scanning`** because every role can now read it; the old URL redirects.
+
+### Backend additions (all read-only or additive; existing APIs unchanged)
+- `GET /api/auth/me` — email, role, organisation.
+- `GET /api/contracts` — the contracts the caller may see (same ownership rule as everywhere), with severity counts and version count. `GraphStore.list_contracts` now also returns `upload_date` (Neo4j: `toString(c.upload_date)`).
+- **Real job progress** — `app/core/progress.py`, Redis-backed (in-memory in tests, fails open like the rate limiter). `POST /api/detect` and `/api/ask/attach` accept an optional `job_id`; the pipeline reports the stage it is actually in (`parse -> extract -> graph -> check -> save`); `GET /api/progress/{job_id}` and `/api/progress/active` are scoped to the caller (someone else's id is a 404). The Detect page and Ask attach show the real stages; the top-bar indicator lists the user's running jobs with their current stage.
+- `GET /api/horizon-scanning/updates` — the regulatory-update log, readable by every role. Amendments first (newest effective date first), then baseline clauses; each update lists the contracts (visible to the caller) that it produced findings on, matched by the same rule label the re-diff writes. Jurisdiction is derived from the regulation's name.
+- `decided_by_user_id` on `approvals` and `restore_requests`, exposed as `decided_by_email` (also on My Drafts).
+- Ask sources carry a quoted `excerpt`, taken from the passage that was actually retrieved — never from the model's own output.
+
+**Requires a dev DB reset** (new columns): `docker compose down -v`. 16 new mocked tests (104 total). The new Cypher and the Redis tracker were also run against the real containers, and the full flow (upload with progress, draft, edit, approve, restore, Horizon Scanning, Ask with evidence) was driven through the real UI.

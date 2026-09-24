@@ -4,6 +4,7 @@ import "./globals.css";
 import AppShell from "@/components/shell/AppShell";
 import { ProcessProvider } from "@/components/shell/Processes";
 import { TooltipProvider } from "@/components/ui/Overlay";
+import { ToastProvider } from "@/components/ui/Toast";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -21,7 +22,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="h-screen">
         <TooltipProvider>
           <ProcessProvider>
-            <AppShell>{children}</AppShell>
+            <ToastProvider>
+              <AppShell>{children}</AppShell>
+            </ToastProvider>
           </ProcessProvider>
         </TooltipProvider>
       </body>

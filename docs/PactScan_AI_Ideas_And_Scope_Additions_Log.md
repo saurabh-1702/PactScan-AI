@@ -115,3 +115,12 @@ Listed by the user as *"Issues or Changes I thought should be there in order to 
 **Requester sees their own drafts and what the reviewer changed (Issue 4).** A "My Drafts" page showing the AI draft, the requester's edit, the reviewer's edit as a highlighted diff, the reviewer's note, and a download link.
 
 **Attach a file in Ask (Issue 5).** *"An Attach file button in Ask chat … so that the end user can attach their own contract file and based on that file, they may also get to ask questions."* The user chose a real upload (full Detect run, saved under the user) over a temporary question-only file, which also meant giving the chat a remembered "active document".
+
+## Frontend redesign
+
+**A full UI rebuild from the user's own specification** (a 30-section "Legal Tech Platform — Frontend Redesign & Production UI/UX Specification"). Asked to review it first, the assistant reported what didn't fit the project (features the app doesn't have, conflicts with built ones, vague points, contrast problems) and the user answered four questions:
+
+- **Real stage progress** instead of a fake percentage — which needed a small backend job-progress tracker so the UI can show the stage the pipeline is genuinely in, and lets a global "N processes running" indicator survive navigation.
+- **Horizon Scanning as an update log plus an admin trigger** — the log became readable by every role (with the "simulated" disclaimer kept), so the page moved out of `/admin`.
+- **Small read-only backend additions** — contract list, current-user info, who decided each approval, quoted evidence on Ask sources, the regulatory-update log.
+- **Lucide + Radix primitives + cmdk** as the only new dependencies, with a "unique and not at all like AI-slop websites" brief: no gradients, no emoji, no decorative KPI tiles; findings marked with a dot *and* a word; one accent colour.

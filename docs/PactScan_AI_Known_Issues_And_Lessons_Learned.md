@@ -291,3 +291,21 @@ Current verified working tier list (2026-09): `openai/gpt-oss-120b,openai/gpt-os
 
 ### 13.4 — Mocked tests can't vouch for new Cypher
 Every ownership/attachment change touched `Neo4jGraphStore` queries that the in-memory store (used by the mocked suite) only *imitates*. Before committing, the new queries were run against the real Neo4j container — owner filter hit/miss, property round-trip, scoped findings, and the vector-search allow-list including a positive case. Same lesson as §10 / §11.4: when a change adds or alters a graph query, run it against the real graph once, not just the fake.
+
+## 14. Frontend redesign
+
+### 14.1 — An unlayered global rule beat every Tailwind utility
+**The bug:** the global `:focus-visible { outline: … }` rule was written outside any cascade layer. Tailwind v4 puts its utilities in `@layer utilities`, and *unlayered CSS always beats layered CSS* — so `focus:outline-none` on the command-palette input did nothing and a double focus ring showed.
+**The fix:** wrap global base rules in `@layer base`. **Lesson:** in Tailwind v4, never write global element/pseudo rules outside a layer if a utility might need to override them.
+
+### 14.2 — The route guard treated "token not read yet" as "signed out"
+**The bug:** the token lives in `localStorage`, which the server (and the hydration render) can't see. The first version of the guard read it as `null` on that first render and redirected everyone to `/login` on every full page load.
+**The fix:** read the token with `useSyncExternalStore` (server snapshot `null`) and only redirect once a separate `hydrated` flag is true. A lint rule (`react-hooks/set-state-in-effect`) had pushed the code away from `useEffect`+`setState`, which is what exposed the ordering problem.
+
+### 14.3 — Shell quoting and PowerShell encodings
+Two tooling traps while making multi-file edits: a long `bash` command mixing several heredocs with embedded quotes failed to parse and silently did nothing (write real script files instead), and PowerShell 5.1's `Get-Content | Set-Content -Encoding utf8` re-encoded a UTF-8 file as ANSI and added a BOM (mangling every `—`). Edit files with the file tools or with Python using explicit `encoding="utf-8", newline=""`. Same family as §13.3.
+
+### 14.4 — Small layout traps
+- `line-clamp-1` sets `display: -webkit-box`; adding `block` after it overrides that and the clamp silently stops working.
+- A CSS grid column with no explicit template sizes to its widest child, so a `min-w-[36rem]` table pushed the whole page wider than a phone. Give grid children `min-w-0` (and the grid `grid-cols-1`).
+- A tab list with `overflow-x-auto` and a `-mb-px` active underline grows a stray vertical scrollbar; draw the baseline as an inset shadow on the list instead.

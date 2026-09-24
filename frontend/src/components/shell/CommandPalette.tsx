@@ -1,8 +1,10 @@
 "use client";
 
 import { Command } from "cmdk";
-import { LogOut, Search, Upload } from "lucide-react";
+import { FileText, LogOut, MessageSquare, Search, Upload } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { getChatSessions, getContracts, type ChatSessionInfo, type ContractSummary } from "@/lib/api";
 import { can, navFor, type Role } from "@/lib/permissions";
 import { NavGlyph } from "./NavIcons";
 
@@ -27,6 +29,16 @@ export default function CommandPalette({
   onSignOut: () => void;
 }) {
   const router = useRouter();
+  const [contracts, setContracts] = useState<ContractSummary[]>([]);
+  const [sessions, setSessions] = useState<ChatSessionInfo[]>([]);
+
+  // Load the searchable records each time the palette opens.
+  useEffect(() => {
+    if (!open) return;
+    getContracts().then(setContracts).catch(() => {});
+    getChatSessions().then(setSessions).catch(() => {});
+  }, [open]);
+
   function go(href: string) {
     onOpenChange(false);
     router.push(href);
@@ -68,6 +80,38 @@ export default function CommandPalette({
             </Command.Item>
           ))}
         </Command.Group>
+
+        {contracts.length > 0 && (
+          <Command.Group heading="Contracts" className={GROUP}>
+            {contracts.slice(0, 30).map((c) => (
+              <Command.Item
+                key={c.contract_id}
+                value={`contract ${c.filename} ${c.contract_id}`}
+                onSelect={() => go(`/contracts/${c.contract_id}`)}
+                className={ITEM}
+              >
+                <FileText className="h-4 w-4 text-faint" aria-hidden />
+                <span className="truncate">{c.filename}</span>
+              </Command.Item>
+            ))}
+          </Command.Group>
+        )}
+
+        {sessions.length > 0 && (
+          <Command.Group heading="Conversations" className={GROUP}>
+            {sessions.slice(0, 20).map((s) => (
+              <Command.Item
+                key={s.id}
+                value={`conversation ${s.title} ${s.id}`}
+                onSelect={() => go(`/ask?session=${s.id}`)}
+                className={ITEM}
+              >
+                <MessageSquare className="h-4 w-4 text-faint" aria-hidden />
+                <span className="truncate">{s.title}</span>
+              </Command.Item>
+            ))}
+          </Command.Group>
+        )}
 
         <Command.Group heading="Actions" className={GROUP}>
           {can(role, "contracts.upload") && (

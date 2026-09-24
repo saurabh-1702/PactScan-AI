@@ -2,6 +2,7 @@
 
 import * as Popover from "@radix-ui/react-popover";
 import { Bell, Download } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   downloadDocumentVersion,
@@ -59,8 +60,7 @@ export default function NotificationsMenu() {
     }
   }
 
-  async function download(e: React.MouseEvent, versionId: string) {
-    e.stopPropagation();
+  async function download(versionId: string) {
     try {
       await downloadDocumentVersion(versionId, `${versionId}.docx`);
     } catch {
@@ -90,8 +90,13 @@ export default function NotificationsMenu() {
           sideOffset={6}
           className="popover-in z-50 w-[22rem] max-w-[calc(100vw-2rem)] rounded-lg border border-line bg-surface shadow-md"
         >
-          <div className="border-b border-line px-4 py-3">
+          <div className="flex items-center justify-between border-b border-line px-4 py-3">
             <p className="text-sm font-semibold text-ink">Notifications</p>
+            <Popover.Close asChild>
+              <Link href="/notifications" className="text-xs font-medium text-accent hover:underline">
+                View all
+              </Link>
+            </Popover.Close>
           </div>
           <ul className="max-h-96 overflow-y-auto">
             {!loaded && (
@@ -103,39 +108,38 @@ export default function NotificationsMenu() {
               </li>
             )}
             {items.map((n) => (
-              <li key={n.id}>
-                <button
-                  type="button"
-                  onClick={() => markRead(n)}
-                  className="flex w-full gap-3 border-b border-line px-4 py-3 text-left last:border-0 hover:bg-hover"
-                >
-                  <span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", n.is_read ? "bg-line-strong" : toneDot(n))} />
-                  <span className="min-w-0 flex-1">
-                    <span className={cn("block text-[13px] leading-snug", n.is_read ? "text-muted" : "font-medium text-ink")}>
-                      {n.message}
-                    </span>
-                    <span className="mt-1 flex items-center justify-between gap-2">
-                      <span className="text-xs text-muted">{timeAgo(n.created_at)}</span>
-                      {n.document_version_id && (
-                        <span
-                          role="button"
-                          tabIndex={0}
-                          onClick={(e) => download(e, n.document_version_id!)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
-                              download(e as unknown as React.MouseEvent, n.document_version_id!);
-                            }
-                          }}
-                          className="inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline"
-                        >
-                          <Download className="h-3 w-3" aria-hidden />
-                          Download
-                        </span>
-                      )}
-                    </span>
-                  </span>
-                </button>
+              <li key={n.id} className="flex gap-3 border-b border-line px-4 py-3 last:border-0">
+                <span
+                  className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", n.is_read ? "bg-line-strong" : toneDot(n))}
+                  aria-hidden
+                />
+                <div className="min-w-0 flex-1">
+                  <p className={cn("text-[13px] leading-snug", n.is_read ? "text-muted" : "font-medium text-ink")}>
+                    {n.message}
+                  </p>
+                  <div className="mt-1.5 flex items-center gap-3">
+                    <span className="text-xs text-muted">{timeAgo(n.created_at)}</span>
+                    {n.document_version_id && (
+                      <button
+                        type="button"
+                        onClick={() => download(n.document_version_id!)}
+                        className="inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline"
+                      >
+                        <Download className="h-3 w-3" aria-hidden />
+                        Download
+                      </button>
+                    )}
+                    {!n.is_read && (
+                      <button
+                        type="button"
+                        onClick={() => markRead(n)}
+                        className="text-xs font-medium text-muted hover:text-ink"
+                      >
+                        Mark read
+                      </button>
+                    )}
+                  </div>
+                </div>
               </li>
             ))}
           </ul>

@@ -14,6 +14,18 @@ This folder holds the project specification and the phase-by-phase build plan.
 
 ## Current status
 
+**Frontend redesign (branch `frontend/redesign`, on top of Phase 6b).**
+The whole UI was rebuilt to a restrained, light, enterprise legal-tech design: persistent
+sidebar + Ctrl+K command palette, one central permission model, real stage-by-stage progress
+for uploads with a global "N processes running" indicator, and every page restyled (Dashboard,
+Detect, Ask with quoted evidence, My Drafts, Approvals with a review panel, Horizon Scanning
+as an update log with an admin-only trigger, contract page, notifications).
+- **Horizon Scanning is now at `/horizon-scanning`** (readable by every role; only admins can trigger).
+- New backend endpoints: `/api/auth/me`, `/api/contracts`, `/api/progress/*`,
+  `/api/horizon-scanning/updates`; `decided_by` recorded on approvals/restores.
+- Tests: 104 mocked pass. **Requires a dev DB reset** (`docker compose down -v`).
+- Not yet merged; manual end-to-end testing (including G Horizon Scanning and H Restore) pending.
+
 **Phase 6b — realism fixes from manual testing (built on the Phase 6 branch, before Phase 7).**
 Five changes the user identified while testing:
 - **Ownership** — an end_user sees only contracts they uploaded (dashboard, contract pages,

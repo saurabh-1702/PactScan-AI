@@ -57,7 +57,6 @@ export function can(role: Role | null | undefined, permission: Permission): bool
 const ROUTE_RULES: { prefix: string; permission: Permission }[] = [
   { prefix: "/approvals", permission: "approvals.review" },
   { prefix: "/horizon-scanning", permission: "horizon.view" },
-  { prefix: "/admin/horizon-scanning", permission: "horizon.view" },
 ];
 
 export function canAccessRoute(role: Role | null | undefined, pathname: string): boolean {
@@ -104,7 +103,7 @@ const NAV: NavItem[] = [
     permission: "approvals.review",
   },
   {
-    href: "/admin/horizon-scanning",
+    href: "/horizon-scanning",
     label: "Horizon Scanning",
     icon: "horizon",
     keywords: "regulation updates changes",

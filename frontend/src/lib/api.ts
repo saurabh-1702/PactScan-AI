@@ -53,6 +53,19 @@ export async function login(email: string, password: string): Promise<LoginRespo
   return handleJson<LoginResponse>(res);
 }
 
+export interface MeInfo {
+  user_id: string;
+  email: string;
+  role: "end_user" | "reviewer" | "admin";
+  tenant_id: string;
+  tenant_name: string;
+}
+
+export async function getMe(): Promise<MeInfo> {
+  const res = await authFetch("/api/auth/me");
+  return handleJson<MeInfo>(res);
+}
+
 export type Severity = "HIGH" | "MEDIUM" | "LOW";
 
 export interface Finding {
@@ -76,9 +89,20 @@ export interface DetectReport {
   timestamp: string | null;
 }
 
-export async function postDetect(file: File): Promise<DetectReport> {
+/** A client-chosen id that lets the UI poll real, stage-by-stage progress for
+ * this upload (see getJobProgress). */
+export function newJobId(): string {
+  const rand =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID().replace(/-/g, "")
+      : Math.random().toString(36).slice(2) + Date.now().toString(36);
+  return `job_${rand}`;
+}
+
+export async function postDetect(file: File, jobId?: string): Promise<DetectReport> {
   const form = new FormData();
   form.append("file", file);
+  if (jobId) form.append("job_id", jobId);
   const res = await authFetch("/api/detect", {
     method: "POST",
     body: form,
@@ -89,6 +113,56 @@ export async function postDetect(file: File): Promise<DetectReport> {
 export async function getDetectReport(contractId: string): Promise<DetectReport> {
   const res = await authFetch(`/api/detect/${contractId}`);
   return handleJson<DetectReport>(res);
+}
+
+export interface ContractSummary {
+  contract_id: string;
+  filename: string;
+  uploaded_by_user_id: string | null;
+  uploaded_by_email: string | null;
+  uploaded_at: string | null;
+  high: number;
+  medium: number;
+  low: number;
+  total_findings: number;
+  version_count: number;
+}
+
+/** Every contract the caller may see (an end user: their own uploads). */
+export async function getContracts(): Promise<ContractSummary[]> {
+  const res = await authFetch("/api/contracts");
+  return handleJson<ContractSummary[]>(res);
+}
+
+// --- Real job progress -----------------------------------------------------
+
+export type StageStatus = "pending" | "active" | "done" | "failed";
+
+export interface JobStage {
+  key: string;
+  label: string;
+  status: StageStatus;
+}
+
+export interface JobProgress {
+  job_id: string;
+  label: string;
+  state: "running" | "done" | "failed";
+  error: string | null;
+  stages: JobStage[];
+  started_at: number;
+  updated_at: number;
+}
+
+export async function getJobProgress(jobId: string): Promise<JobProgress | null> {
+  const res = await authFetch(`/api/progress/${jobId}`);
+  if (res.status === 404) return null; // not started yet, or not ours
+  return handleJson<JobProgress>(res);
+}
+
+export async function getActiveJobs(): Promise<JobProgress[]> {
+  const res = await authFetch("/api/progress/active");
+  return handleJson<JobProgress[]>(res);
 }
 
 // --- Suggest (Phase 2) ------------------------------------------------
@@ -142,6 +216,7 @@ export interface Approval {
   reviewer_note: string | null;
   edited_text: string | null;
   decided_at: string | null;
+  decided_by_email: string | null;
   created_at: string;
   requested_by_user_id: string | null;
   requested_by_email: string | null;
@@ -235,6 +310,8 @@ export type AskResponseType =
 export interface AskSourceInfo {
   document_name: string;
   page_number: number;
+  /** the quoted passage the answer relied on (contract answers only) */
+  excerpt?: string | null;
 }
 
 export interface AskApiResponse {
@@ -378,6 +455,23 @@ export async function postSimulateRegulationUpdate(
   return handleJson<SimulateUpdateResult>(res);
 }
 
+export interface RegulationUpdate {
+  id: string;
+  regulation_name: string;
+  jurisdiction: string | null;
+  section: string;
+  text: string;
+  effective_date: string | null;
+  /** "update" = an amendment added via Horizon-Scanning (simulated); "baseline" = seeded */
+  kind: "update" | "baseline";
+  affected_contracts: { contract_id: string; filename: string }[];
+}
+
+export async function getRegulationUpdates(): Promise<RegulationUpdate[]> {
+  const res = await authFetch("/api/horizon-scanning/updates");
+  return handleJson<RegulationUpdate[]>(res);
+}
+
 // --- Document Restore (Phase 6) --------------------------------------------
 
 export interface RestoreRequestInfo {
@@ -392,6 +486,7 @@ export interface RestoreRequestInfo {
   reviewer_note: string | null;
   abuse_flagged: boolean;
   decided_at: string | null;
+  decided_by_email: string | null;
   created_at: string;
 }
 
@@ -452,6 +547,7 @@ export interface DraftInfo {
   created_at: string;
   submitted_at: string | null;
   decided_at: string | null;
+  decided_by_email: string | null;
 }
 
 export async function getMyDrafts(): Promise<DraftInfo[]> {
@@ -478,10 +574,15 @@ export async function submitDraft(suggestionId: string, editedText?: string): Pr
 /** Attach a contract to an Ask conversation. This is a real upload — the full
  * Detect pipeline runs on it (so it can take a while) — and the file becomes
  * the conversation's active document. */
-export async function postAskAttach(file: File, sessionId?: string | null): Promise<AskApiResponse> {
+export async function postAskAttach(
+  file: File,
+  sessionId?: string | null,
+  jobId?: string,
+): Promise<AskApiResponse> {
   const form = new FormData();
   form.append("file", file);
   if (sessionId) form.append("session_id", sessionId);
+  if (jobId) form.append("job_id", jobId);
   const res = await authFetch("/api/ask/attach", { method: "POST", body: form });
   return handleJson<AskApiResponse>(res);
 }

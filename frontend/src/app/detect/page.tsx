@@ -1,203 +1,179 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import DraftSubmitPanel from "@/components/DraftSubmitPanel";
-import {
-  postDetect,
-  postSuggestFromFinding,
-  type DetectReport,
-  type Severity,
-  type SuggestResult,
-} from "@/lib/api";
-
-const SEVERITY_STYLES: Record<Severity, string> = {
-  HIGH: "border-red-500 bg-red-50 text-red-900",
-  MEDIUM: "border-amber-500 bg-amber-50 text-amber-900",
-  LOW: "border-sky-500 bg-sky-50 text-sky-900",
-};
+import { ArrowRight, CheckCircle2, FileSearch } from "lucide-react";
+import { useMemo, useState } from "react";
+import DropZone from "@/components/DropZone";
+import FindingCard from "@/components/FindingCard";
+import { Button } from "@/components/ui/Button";
+import { Alert, EmptyState, Skeleton } from "@/components/ui/Feedback";
+import { Card, Page, PageHeader, SectionTitle } from "@/components/ui/Layout";
+import { SEVERITY_ORDER } from "@/components/ui/Severity";
+import { StageProgress } from "@/components/ui/StageProgress";
+import { useToast } from "@/components/ui/Toast";
+import { getContracts, newJobId, postDetect, type DetectReport } from "@/lib/api";
+import { formatDateTime } from "@/lib/format";
+import { useJobProgress, useLoad } from "@/lib/hooks";
 
 export default function DetectPage() {
+  const toast = useToast();
   const [file, setFile] = useState<File | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<DetectReport | null>(null);
 
-  const [suggestions, setSuggestions] = useState<Record<string, SuggestResult>>({});
-  const [suggestLoading, setSuggestLoading] = useState<string | null>(null);
-  const [suggestError, setSuggestError] = useState<Record<string, string>>({});
+  const progress = useJobProgress(running ? jobId : null);
+  const recent = useLoad(getContracts);
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!file) return;
-    setLoading(true);
+  async function onRun() {
+    if (!file || running) return;
+    const id = newJobId();
+    setJobId(id);
+    setRunning(true);
     setError(null);
     setReport(null);
-    setSuggestions({});
-    setSuggestError({});
     try {
-      setReport(await postDetect(file));
+      const result = await postDetect(file, id);
+      setReport(result);
+      setFile(null);
+      recent.reload();
+      toast.success(
+        result.total_findings === 0
+          ? `${result.filename} scanned — no compliance issues found.`
+          : `${result.filename} scanned — ${result.total_findings} finding${result.total_findings === 1 ? "" : "s"}.`,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
-      setLoading(false);
+      setRunning(false);
     }
   }
 
-  async function onSuggest(findingId: string) {
-    setSuggestLoading(findingId);
-    setSuggestError((prev) => ({ ...prev, [findingId]: "" }));
-    try {
-      const result = await postSuggestFromFinding(findingId);
-      setSuggestions((prev) => ({ ...prev, [findingId]: result }));
-    } catch (err) {
-      setSuggestError((prev) => ({
-        ...prev,
-        [findingId]: err instanceof Error ? err.message : "Something went wrong",
-      }));
-    } finally {
-      setSuggestLoading(null);
-    }
-  }
+  const sorted = useMemo(
+    () =>
+      report
+        ? [...report.findings].sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity])
+        : [],
+    [report],
+  );
+  const counts = useMemo(() => {
+    const c = { HIGH: 0, MEDIUM: 0, LOW: 0 };
+    for (const f of report?.findings ?? []) c[f.severity]++;
+    return c;
+  }, [report]);
 
   return (
-    <main className="mx-auto max-w-3xl px-6 py-10">
-      <h1 className="text-2xl font-semibold tracking-tight">
-        PactScan AI — Detect
-      </h1>
-      <p className="mt-1 text-sm text-neutral-500">
-        Upload a vendor DPA / MSA. Detect parses it, maps it into the knowledge
-        graph, and checks it against the playbook + DPDP / GDPR.
-      </p>
+    <Page width="narrow">
+      <PageHeader
+        title="Detect"
+        description="Upload a vendor agreement. PactScan reads it, maps its clauses, and checks them against your playbook and the DPDP Act and GDPR."
+      />
 
-      <form onSubmit={onSubmit} className="mt-6 flex items-center gap-3">
-        <input
-          type="file"
-          accept=".pdf,.docx,.doc,.txt"
-          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          className="text-sm"
-        />
-        <button
-          type="submit"
-          disabled={!file || loading}
-          className="rounded bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
-        >
-          {loading ? "Analysing…" : "Run Detect"}
-        </button>
-      </form>
-
-      {error && (
-        <p className="mt-4 rounded border border-red-400 bg-red-50 p-3 text-sm text-red-800">
-          {error}
-        </p>
-      )}
+      <Card>
+        {running ? (
+          <div>
+            <p className="text-sm font-medium text-ink">Scanning {file?.name}</p>
+            <p className="mb-4 mt-0.5 text-xs text-muted">
+              This runs the full compliance check, so it can take a minute. You can leave this page
+              — it keeps running.
+            </p>
+            {progress ? (
+              <StageProgress stages={progress.stages} />
+            ) : (
+              <p className="text-[13px] text-muted">Starting…</p>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <DropZone file={file} onFile={setFile} onReject={setError} />
+            {error && (
+              <Alert tone="danger" title="That didn't work">
+                {error}
+              </Alert>
+            )}
+            <div className="flex justify-end">
+              <Button variant="primary" disabled={!file} onClick={onRun}>
+                Run compliance check
+              </Button>
+            </div>
+          </div>
+        )}
+      </Card>
 
       {report && (
-        <section className="mt-8">
-          <div className="flex items-baseline justify-between">
-            <h2 className="text-lg font-medium">
-              {report.total_findings} finding
-              {report.total_findings === 1 ? "" : "s"}
-            </h2>
+        <section className="mt-8" aria-live="polite">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold text-ink">{report.filename}</h2>
+              <p className="mt-0.5 text-[13px] text-muted">
+                {report.total_findings === 0
+                  ? "No compliance issues found."
+                  : `${report.total_findings} finding${report.total_findings === 1 ? "" : "s"}: ${counts.HIGH} high, ${counts.MEDIUM} medium, ${counts.LOW} low.`}
+              </p>
+            </div>
             <Link
               href={`/contracts/${report.contract_id}`}
-              className="text-xs font-semibold text-sky-700 underline"
+              className="inline-flex items-center gap-1 text-[13px] font-medium text-accent hover:underline"
             >
-              contract {report.contract_id} — version history →
+              Open contract and version history
+              <ArrowRight className="h-3.5 w-3.5" aria-hidden />
             </Link>
           </div>
 
           {report.total_findings === 0 ? (
-            <p className="mt-3 rounded border border-emerald-400 bg-emerald-50 p-3 text-sm text-emerald-800">
-              No compliance issues detected.
-            </p>
+            <Alert tone="success" className="mt-4">
+              <span className="inline-flex items-center gap-1.5">
+                <CheckCircle2 className="h-4 w-4" aria-hidden /> Nothing in this contract conflicts with
+                your playbook or the regulations.
+              </span>
+            </Alert>
           ) : (
-            <ul className="mt-3 space-y-3">
-              {report.findings.map((f) => {
-                const suggestion = suggestions[f.finding_id];
-                const isSuggesting = suggestLoading === f.finding_id;
-                return (
-                  <li
-                    key={f.finding_id}
-                    className={`rounded border-l-4 p-3 text-sm ${SEVERITY_STYLES[f.severity]}`}
-                  >
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded bg-white/60 px-1.5 py-0.5 text-xs font-semibold">
-                        {f.severity}
-                      </span>
-                      <span className="font-medium">{f.clause_type}</span>
-                      <span className="text-xs opacity-70">
-                        page {f.page_number} · {f.section_header}
-                      </span>
-                      {f.override_chain.length > 1 && (
-                        <span className="rounded bg-white/60 px-1.5 py-0.5 text-xs font-semibold">
-                          multi-hop override ({f.override_chain.length} clauses)
-                        </span>
-                      )}
-                    </div>
-                    <p className="mt-1 font-medium">
-                      {f.rule_or_regulation_violated}
-                    </p>
-                    <p className="mt-1 opacity-90">{f.explanation}</p>
-                    <div className="mt-2 flex items-center gap-3">
-                      <p className="text-xs opacity-60">confidence: {f.confidence}</p>
-                      <button
-                        type="button"
-                        onClick={() => onSuggest(f.finding_id)}
-                        disabled={isSuggesting}
-                        className="rounded bg-white/70 px-2.5 py-1 text-xs font-semibold hover:bg-white disabled:opacity-40"
-                      >
-                        {isSuggesting
-                          ? "Drafting…"
-                          : suggestion
-                            ? "Re-suggest fix"
-                            : "Suggest fix"}
-                      </button>
-                    </div>
-
-                    {suggestError[f.finding_id] && (
-                      <p className="mt-2 rounded border border-red-400 bg-red-50 p-2 text-xs text-red-800">
-                        {suggestError[f.finding_id]}
-                      </p>
-                    )}
-
-                    {suggestion && (
-                      <div className="mt-3 rounded border border-neutral-300 bg-white/80 p-3 text-neutral-800">
-                        <DraftSubmitPanel
-                          suggestionId={suggestion.suggestion_id}
-                          aiDraft={suggestion.proposed_text}
-                          rationale={`${suggestion.rationale} (confidence ${suggestion.confidence})`}
-                        />
-
-                        {suggestion.judge && (
-                          <p className="mt-2 text-xs text-neutral-600">
-                            <span className="font-semibold">
-                              Adversarial review — {suggestion.judge.verdict}:
-                            </span>{" "}
-                            {suggestion.judge.reasoning}
-                          </p>
-                        )}
-                        {suggestion.negotiation && (
-                          <div className="mt-2 rounded bg-neutral-50 p-2 text-xs text-neutral-600">
-                            <p>
-                              <span className="font-semibold">Predicted pushback: </span>
-                              {suggestion.negotiation.predicted_pushback}
-                            </p>
-                            <p className="mt-1">
-                              <span className="font-semibold">Fallback clause: </span>
-                              {suggestion.negotiation.fallback_clause_text}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </li>
-                );
-              })}
+            <ul className="mt-4 space-y-3">
+              {sorted.map((f) => (
+                <FindingCard key={f.finding_id} finding={f} />
+              ))}
             </ul>
           )}
         </section>
       )}
-    </main>
+
+      <section className="mt-10">
+        <SectionTitle>Recent documents</SectionTitle>
+        {recent.loading && !recent.data ? (
+          <div className="space-y-2">
+            <Skeleton className="h-12" />
+            <Skeleton className="h-12" />
+          </div>
+        ) : recent.error && !recent.data ? (
+          <Alert tone="danger">{recent.error}</Alert>
+        ) : recent.data && recent.data.length === 0 ? (
+          <EmptyState icon={FileSearch} title="No documents yet">
+            Contracts you scan appear here so you can reopen their findings and versions.
+          </EmptyState>
+        ) : (
+          <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface shadow-sm">
+            {(recent.data ?? []).slice(0, 6).map((c) => (
+              <li key={c.contract_id}>
+                <Link
+                  href={`/contracts/${c.contract_id}`}
+                  className="flex items-center justify-between gap-4 px-4 py-3 hover:bg-hover"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-[13px] font-medium text-ink">{c.filename}</span>
+                    <span className="block text-xs text-muted">{formatDateTime(c.uploaded_at)}</span>
+                  </span>
+                  <span className="shrink-0 text-xs text-muted">
+                    {c.total_findings === 0
+                      ? "No findings"
+                      : `${c.total_findings} finding${c.total_findings === 1 ? "" : "s"}`}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </Page>
   );
 }
