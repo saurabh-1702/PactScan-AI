@@ -24,7 +24,11 @@ logger = logging.getLogger("pactscan.notifications")
 
 
 def notify_new_findings(
-    db: Session, tenant_id: str, contract_filename: str, findings: list[Finding]
+    db: Session,
+    tenant_id: str,
+    contract_filename: str,
+    findings: list[Finding],
+    contract_owner_user_id: str | None = None,
 ) -> None:
     if not findings:
         return
@@ -37,6 +41,7 @@ def notify_new_findings(
         )
         row = Notification(
             tenant_id=tenant_id,
+            contract_owner_user_id=contract_owner_user_id,
             finding_id=finding.finding_id,
             severity=finding.severity.value,
             message=message,

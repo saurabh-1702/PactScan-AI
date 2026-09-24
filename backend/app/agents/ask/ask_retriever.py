@@ -46,7 +46,10 @@ _GENERIC_NAME_TOKENS = {"contract", "agreement", "document", "the", "vendor", "d
 
 
 def find_contract_by_name(
-    store: GraphStore, name_query: str, tenant_id: str = DEMO_TENANT
+    store: GraphStore,
+    name_query: str,
+    tenant_id: str = DEMO_TENANT,
+    owner_user_id: str | None = None,
 ) -> dict | None:
     """Substring + word-overlap heuristic — deliberately simple, not a real
     fuzzy-matching library. Swap for rapidfuzz/difflib if this proves too
@@ -60,7 +63,7 @@ def find_contract_by_name(
     # below keeps the first tied match — so when a tenant has uploaded the
     # same filename more than once, this resolves to the newest one.
     best, best_score = None, 0.0
-    for c in store.list_contracts(tenant_id=tenant_id):
+    for c in store.list_contracts(tenant_id=tenant_id, owner_user_id=owner_user_id):
         name = _normalize(Path(c["filename"]).stem)
         if not name:
             continue
@@ -81,10 +84,20 @@ async def retrieve_for_content_question(
     document_scope: DocumentScope,
     mentioned_document_name: str | None,
     tenant_id: str = DEMO_TENANT,
+    owner_user_id: str | None = None,
 ) -> RetrievalResult:
     contract_id = None
+    allowed_ids: set[str] | None = None
+    if owner_user_id is not None:
+        # end_user: the portfolio is only the contracts they uploaded
+        allowed_ids = {
+            c["contract_id"]
+            for c in store.list_contracts(tenant_id=tenant_id, owner_user_id=owner_user_id)
+        }
     if document_scope == DocumentScope.SINGLE:
-        match = find_contract_by_name(store, mentioned_document_name or "", tenant_id=tenant_id)
+        match = find_contract_by_name(
+            store, mentioned_document_name or "", tenant_id=tenant_id, owner_user_id=owner_user_id
+        )
         if match is None:
             label = mentioned_document_name or "that document"
             return RetrievalResult(
@@ -98,7 +111,11 @@ async def retrieve_for_content_question(
 
     embedding = await llm.generate_embedding(question)
     hits = store.vector_search_similar_clauses(
-        embedding, tenant_id=tenant_id, top_k=settings.ask_top_k, contract_id=contract_id
+        embedding,
+        tenant_id=tenant_id,
+        top_k=settings.ask_top_k,
+        contract_id=contract_id,
+        allowed_contract_ids=allowed_ids,
     )
 
     if not hits or hits[0]["similarity"] < settings.ask_similarity_threshold:

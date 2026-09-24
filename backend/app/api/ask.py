@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.agents.detect.graph_store import GraphStore, get_graph_store
 from app.agents.ask.pipeline import ChatSessionAccessError, handle_ask
+from app.api.access import owner_scope
 from app.api.deps import CurrentUser, get_current_user
 from app.db.models import ChatMessage, ChatSession
 from app.db.postgres_client import get_db
@@ -45,6 +46,7 @@ async def ask(
             body.session_id,
             tenant_id=current_user.tenant_id,
             user_id=current_user.user_id,
+            owner_user_id=owner_scope(current_user),
         )
     except ChatSessionAccessError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

@@ -27,9 +27,14 @@ async def handle_edit_instruction(
     classification: ScopeClassification,
     tenant_id: str = DEMO_TENANT,
     requested_by_user_id: str | None = None,
+    owner_user_id: str | None = None,
 ) -> AskResponse:
     name = classification.mentioned_document_name
-    match = find_contract_by_name(store, name or "", tenant_id=tenant_id) if name else None
+    match = (
+        find_contract_by_name(store, name or "", tenant_id=tenant_id, owner_user_id=owner_user_id)
+        if name
+        else None
+    )
     if match is None:
         msg = (
             f"I don't have a document matching {name!r} in your portfolio."

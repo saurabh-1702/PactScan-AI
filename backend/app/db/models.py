@@ -182,6 +182,10 @@ class Notification(Base):
     # None = broadcast to every user in the tenant (all new_finding rows);
     # set = addressed to exactly one user (all approval_decided rows).
     recipient_user_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    # For new_finding broadcasts: who uploaded the contract the finding is
+    # about. An end_user only sees broadcasts about their OWN contracts;
+    # reviewers/admins see every broadcast in the tenant.
+    contract_owner_user_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     finding_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     severity: Mapped[str | None] = mapped_column(String(10), nullable=True)
     message: Mapped[str] = mapped_column(Text)

@@ -51,12 +51,17 @@ async def handle_ask(
     session_id: str | None,
     tenant_id: str = DEMO_TENANT,
     user_id: str | None = None,
+    owner_user_id: str | None = None,
 ) -> AskResponse:
+    """``owner_user_id`` (set only for end_user callers) restricts every
+    contract lookup in this turn to that user's own uploads."""
     session = _get_or_create_session(db, session_id, tenant_id, user_id, message)
     _record_message(db, session.id, role="user", content=message)
 
     classification = await classify_scope(message)
-    response = await _route(store, db, message, classification, tenant_id, user_id)
+    response = await _route(
+        store, db, message, classification, tenant_id, user_id, owner_user_id
+    )
     response.session_id = session.id
 
     _record_message(
@@ -82,6 +87,7 @@ async def _route(
     classification,
     tenant_id: str,
     user_id: str | None = None,
+    owner_user_id: str | None = None,
 ) -> AskResponse:
     if classification.scope == AskScope.OUT_OF_SCOPE:
         return AskResponse(session_id="", type=AskResponseType.OUT_OF_SCOPE, answer_text=_OUT_OF_SCOPE_MESSAGE)
@@ -108,7 +114,12 @@ async def _route(
                     ),
                 )
         return await handle_edit_instruction(
-            store, db, classification, tenant_id=tenant_id, requested_by_user_id=user_id
+            store,
+            db,
+            classification,
+            tenant_id=tenant_id,
+            requested_by_user_id=user_id,
+            owner_user_id=owner_user_id,
         )
 
     if classification.scope == AskScope.COMPLIANCE_STATUS_QUESTION:
@@ -119,6 +130,7 @@ async def _route(
             classification.mentioned_document_name,
             classification.time_reference,
             tenant_id=tenant_id,
+            owner_user_id=owner_user_id,
         )
         if summary.get("not_found"):
             label = summary.get("document_name") or "that document"
@@ -134,7 +146,12 @@ async def _route(
 
     # AskScope.CONTRACT_QUESTION
     retrieval = await retrieve_for_content_question(
-        store, message, classification.document_scope, classification.mentioned_document_name, tenant_id=tenant_id
+        store,
+        message,
+        classification.document_scope,
+        classification.mentioned_document_name,
+        tenant_id=tenant_id,
+        owner_user_id=owner_user_id,
     )
     if retrieval.abstain:
         return AskResponse(session_id="", type=AskResponseType.ABSTAINED, answer_text=retrieval.abstain_reason)

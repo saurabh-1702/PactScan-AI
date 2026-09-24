@@ -25,6 +25,7 @@ async def ingest_and_detect(
     tenant_id: str = DEMO_TENANT,
     contract_id: str | None = None,
     db: "Session | None" = None,
+    uploaded_by_user_id: str | None = None,
 ) -> DetectReport:
     """``db`` is optional (Phase 3) — when provided, the original upload (or a
     synthesized .docx reconstruction, if it wasn't already a .docx) is
@@ -35,7 +36,12 @@ async def ingest_and_detect(
     parsed = ingest.parse_document(file_path)
     clauses = await ingest.extract_clauses(parsed, contract_id)
     await graph_writer.write_contract_graph(
-        store, contract_id, filename, clauses, tenant_id=tenant_id
+        store,
+        contract_id,
+        filename,
+        clauses,
+        tenant_id=tenant_id,
+        uploaded_by_user_id=uploaded_by_user_id,
     )
     findings = await run_detect(store, contract_id, tenant_id=tenant_id)
 
@@ -47,7 +53,9 @@ async def ingest_and_detect(
         ensure_initial_version(
             db, tenant_id, contract_id, filename, Path(file_path).read_bytes(), stored_clauses
         )
-        notify_new_findings(db, tenant_id, filename, findings)
+        notify_new_findings(
+            db, tenant_id, filename, findings, contract_owner_user_id=uploaded_by_user_id
+        )
 
     return DetectReport(
         contract_id=contract_id,

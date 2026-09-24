@@ -78,18 +78,24 @@ def build_status_summary(
     mentioned_document_name: str | None,
     time_reference: str | None,
     tenant_id: str = DEMO_TENANT,
+    owner_user_id: str | None = None,
 ) -> dict:
     document_name = None
     contract_id = None
     if document_scope == DocumentScope.SINGLE:
-        match = find_contract_by_name(store, mentioned_document_name or "", tenant_id=tenant_id)
+        match = find_contract_by_name(
+            store, mentioned_document_name or "", tenant_id=tenant_id, owner_user_id=owner_user_id
+        )
         if match is None:
             return {"items": [], "not_found": True, "document_name": mentioned_document_name}
         contract_id = match["contract_id"]
         document_name = match["filename"]
 
     cutoff = parse_time_reference(time_reference)
-    filenames = {c["contract_id"]: c["filename"] for c in store.list_contracts(tenant_id=tenant_id)}
+    filenames = {
+        c["contract_id"]: c["filename"]
+        for c in store.list_contracts(tenant_id=tenant_id, owner_user_id=owner_user_id)
+    }
     contract_ids = [contract_id] if contract_id else list(filenames.keys())
 
     items: list[dict] = []
@@ -107,9 +113,12 @@ def build_status_summary(
                 }
             )
 
-    q = db.query(RedlineSuggestion)
-    if contract_id:
-        q = q.filter(RedlineSuggestion.contract_id == contract_id)
+    # tenant + (for an end_user) ownership scoped — this query previously had
+    # no tenant filter at all
+    q = db.query(RedlineSuggestion).filter(
+        RedlineSuggestion.tenant_id == tenant_id,
+        RedlineSuggestion.contract_id.in_(contract_ids),
+    )
     if cutoff:
         q = q.filter(RedlineSuggestion.created_at >= cutoff)
     for s in q.order_by(RedlineSuggestion.created_at.desc()).limit(50).all():

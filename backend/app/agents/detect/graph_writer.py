@@ -71,8 +71,11 @@ async def write_contract_graph(
     filename: str,
     clauses: list[ExtractedClause],
     tenant_id: str = DEMO_TENANT,
+    uploaded_by_user_id: str | None = None,
 ) -> None:
-    store.upsert_contract(contract_id, filename, tenant_id=tenant_id)
+    store.upsert_contract(
+        contract_id, filename, tenant_id=tenant_id, uploaded_by_user_id=uploaded_by_user_id
+    )
     for clause in clauses:
         store.add_clause(clause, tenant_id=tenant_id)
 

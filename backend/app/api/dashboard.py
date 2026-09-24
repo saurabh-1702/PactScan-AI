@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.agents.detect.graph_store import GraphStore, get_graph_store
+from app.api.access import owner_scope, visible_contract_ids
 from app.api.deps import CurrentUser, get_current_user
 from app.db.models import Approval, RedlineSuggestion
 from app.db.postgres_client import get_db
@@ -33,23 +34,33 @@ def overview(
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
 ) -> DashboardOverview:
-    findings = store.get_all_findings(tenant_id=current_user.tenant_id)
+    # end_user: only contracts they uploaded; reviewer/admin: whole tenant
+    findings = store.get_all_findings(
+        tenant_id=current_user.tenant_id, owner_user_id=owner_scope(current_user)
+    )
+    visible = visible_contract_ids(store, current_user)
     findings_by_severity = {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
     for f in findings:
         findings_by_severity[f["severity"]] = findings_by_severity.get(f["severity"], 0) + 1
 
     approvals_by_status = {"pending": 0, "approved": 0, "rejected": 0}
-    rows = (
+    q = (
         db.query(Approval.status)
         .join(RedlineSuggestion, Approval.redline_suggestion_id == RedlineSuggestion.id)
         .filter(RedlineSuggestion.tenant_id == current_user.tenant_id)
-        .all()
     )
+    if visible is not None:
+        q = q.filter(RedlineSuggestion.contract_id.in_(visible))
+    rows = q.all()
     for (status,) in rows:
         approvals_by_status[status] = approvals_by_status.get(status, 0) + 1
 
     return DashboardOverview(
-        total_contracts=len(store.list_contracts(tenant_id=current_user.tenant_id)),
+        total_contracts=len(
+            store.list_contracts(
+                tenant_id=current_user.tenant_id, owner_user_id=owner_scope(current_user)
+            )
+        ),
         findings_by_severity=findings_by_severity,
         approvals_by_status=approvals_by_status,
     )
@@ -61,14 +72,15 @@ def findings_pipeline(
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
 ) -> FindingsPipeline:
-    findings = store.get_all_findings(tenant_id=current_user.tenant_id)
-
-    suggestions = (
-        db.query(RedlineSuggestion)
-        .filter(RedlineSuggestion.tenant_id == current_user.tenant_id)
-        .order_by(RedlineSuggestion.created_at.desc())
-        .all()
+    findings = store.get_all_findings(
+        tenant_id=current_user.tenant_id, owner_user_id=owner_scope(current_user)
     )
+    visible = visible_contract_ids(store, current_user)
+
+    sq = db.query(RedlineSuggestion).filter(RedlineSuggestion.tenant_id == current_user.tenant_id)
+    if visible is not None:
+        sq = sq.filter(RedlineSuggestion.contract_id.in_(visible))
+    suggestions = sq.order_by(RedlineSuggestion.created_at.desc()).all()
     # latest suggestion per finding_id wins, for a finding re-suggested more than once
     latest_suggestion_by_finding: dict[str, RedlineSuggestion] = {}
     for s in suggestions:

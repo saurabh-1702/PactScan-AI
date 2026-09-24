@@ -83,8 +83,16 @@ class GraphStore(abc.ABC):
     # --- contract / clause writes ---------------------------------------
     @abc.abstractmethod
     def upsert_contract(
-        self, contract_id: str, filename: str, tenant_id: str = DEMO_TENANT
-    ) -> None: ...
+        self,
+        contract_id: str,
+        filename: str,
+        tenant_id: str = DEMO_TENANT,
+        uploaded_by_user_id: str | None = None,
+    ) -> None:
+        """``uploaded_by_user_id`` (Phase 6b) records who uploaded the
+        contract, so an end_user's dashboard/Ask/contract pages can be limited
+        to their own uploads while reviewers/admins keep the tenant-wide view.
+        None = unowned (uploads predating this, or direct pipeline calls)."""
 
     @abc.abstractmethod
     def add_clause(self, clause: ExtractedClause, tenant_id: str = DEMO_TENANT) -> None: ...
@@ -135,7 +143,9 @@ class GraphStore(abc.ABC):
     ) -> list[Finding]: ...
 
     @abc.abstractmethod
-    def get_all_findings(self, tenant_id: str = DEMO_TENANT) -> list[dict]:
+    def get_all_findings(
+        self, tenant_id: str = DEMO_TENANT, owner_user_id: str | None = None
+    ) -> list[dict]:
         """Every finding across every contract in the tenant (Phase 5's
         dashboard). Each dict: {finding_id, contract_id, clause_id, severity,
         rule_or_regulation_violated}. Unlike ``get_findings``, not scoped to
@@ -197,6 +207,7 @@ class GraphStore(abc.ABC):
         top_k: int = 5,
         exclude_clause_id: str | None = None,
         contract_id: str | None = None,
+        allowed_contract_ids: set[str] | None = None,
     ) -> list[dict]:
         """Each dict: {clause_id, contract_id, clause_type, raw_text, page_number,
         similarity}. ``contract_id`` restricts the search to one contract
@@ -205,9 +216,13 @@ class GraphStore(abc.ABC):
         ``None`` searches the whole tenant via the vector index."""
 
     @abc.abstractmethod
-    def list_contracts(self, tenant_id: str = DEMO_TENANT) -> list[dict]:
-        """Every contract in the tenant, most-recently-uploaded first. Each
-        dict: {contract_id, filename}. Callers that pick "the" contract for a
+    def list_contracts(
+        self, tenant_id: str = DEMO_TENANT, owner_user_id: str | None = None
+    ) -> list[dict]:
+        """Every contract in the tenant (or, if ``owner_user_id`` is given,
+        only that user's uploads — how an end_user is kept to their own
+        contracts), most-recently-uploaded first. Each dict: {contract_id,
+        filename, uploaded_by_user_id}. Callers that pick "the" contract for a
         given filename (e.g. Ask's name matching) rely on this ordering to
         prefer the newest upload when the same filename was ingested more
         than once."""
@@ -273,11 +288,12 @@ class InMemoryGraphStore(GraphStore):
         self.regulations[new_id] = clause
         return clause
 
-    def upsert_contract(self, contract_id, filename, tenant_id=DEMO_TENANT):
+    def upsert_contract(self, contract_id, filename, tenant_id=DEMO_TENANT, uploaded_by_user_id=None):
         self.contracts[(tenant_id, contract_id)] = {
             "id": contract_id,
             "filename": filename,
             "tenant_id": tenant_id,
+            "uploaded_by_user_id": uploaded_by_user_id,
             "upload_date": datetime.now(timezone.utc).isoformat(),
         }
 
@@ -348,11 +364,15 @@ class InMemoryGraphStore(GraphStore):
     def get_findings(self, contract_id, tenant_id=DEMO_TENANT):
         return list(self.findings.get((tenant_id, contract_id), []))
 
-    def get_all_findings(self, tenant_id=DEMO_TENANT):
+    def get_all_findings(self, tenant_id=DEMO_TENANT, owner_user_id=None):
         out: list[dict] = []
         for (t, contract_id), findings in self.findings.items():
             if t != tenant_id:
                 continue
+            if owner_user_id is not None:
+                owner = self.contracts.get((tenant_id, contract_id), {}).get("uploaded_by_user_id")
+                if owner != owner_user_id:
+                    continue
             for f in findings:
                 out.append(
                     {
@@ -402,13 +422,21 @@ class InMemoryGraphStore(GraphStore):
         ]
 
     def vector_search_similar_clauses(
-        self, embedding, tenant_id=DEMO_TENANT, top_k=5, exclude_clause_id=None, contract_id=None
+        self,
+        embedding,
+        tenant_id=DEMO_TENANT,
+        top_k=5,
+        exclude_clause_id=None,
+        contract_id=None,
+        allowed_contract_ids=None,
     ):
         scored = []
         for (t, cid), c in self.clauses.items():
             if t != tenant_id or c.embedding is None or cid == exclude_clause_id:
                 continue
             if contract_id is not None and c.contract_id != contract_id:
+                continue
+            if allowed_contract_ids is not None and c.contract_id not in allowed_contract_ids:
                 continue
             scored.append(
                 {
@@ -423,10 +451,22 @@ class InMemoryGraphStore(GraphStore):
         scored.sort(key=lambda d: d["similarity"], reverse=True)
         return scored[:top_k]
 
-    def list_contracts(self, tenant_id=DEMO_TENANT):
-        matches = [c for (t, _), c in self.contracts.items() if t == tenant_id]
+    def list_contracts(self, tenant_id=DEMO_TENANT, owner_user_id=None):
+        matches = [
+            c
+            for (t, _), c in self.contracts.items()
+            if t == tenant_id
+            and (owner_user_id is None or c.get("uploaded_by_user_id") == owner_user_id)
+        ]
         matches.sort(key=lambda c: c["upload_date"], reverse=True)
-        return [{"contract_id": c["id"], "filename": c["filename"]} for c in matches]
+        return [
+            {
+                "contract_id": c["id"],
+                "filename": c["filename"],
+                "uploaded_by_user_id": c.get("uploaded_by_user_id"),
+            }
+            for c in matches
+        ]
 
     def get_override_relationships(self, clause_id, tenant_id=DEMO_TENANT):
         out: list[dict] = []
@@ -589,14 +629,16 @@ class Neo4jGraphStore(GraphStore):
         }
 
     # --- contract / clause writes ---------------------------------------
-    def upsert_contract(self, contract_id, filename, tenant_id=DEMO_TENANT):
+    def upsert_contract(self, contract_id, filename, tenant_id=DEMO_TENANT, uploaded_by_user_id=None):
         self._run(
             """
             MERGE (c:Contract {id: $id, tenant_id: $tenant_id})
             SET c.filename = $filename,
+                c.uploaded_by_user_id = coalesce(c.uploaded_by_user_id, $uploaded_by),
                 c.upload_date = coalesce(c.upload_date, datetime())
             """,
             id=contract_id,
+            uploaded_by=uploaded_by_user_id,
             filename=filename,
             tenant_id=tenant_id,
         )
@@ -785,14 +827,16 @@ class Neo4jGraphStore(GraphStore):
             out.append(Finding.model_validate(r))
         return out
 
-    def get_all_findings(self, tenant_id=DEMO_TENANT):
+    def get_all_findings(self, tenant_id=DEMO_TENANT, owner_user_id=None):
         return self._run(
             """
             MATCH (c:Contract {tenant_id: $tenant_id})-[:HAS_FINDING]->(f:Finding)
+            WHERE ($owner IS NULL OR c.uploaded_by_user_id = $owner)
             RETURN f.id AS finding_id, c.id AS contract_id, f.clause_id AS clause_id,
                    f.severity AS severity, f.rule_or_regulation_violated AS rule_or_regulation_violated
             """,
             tenant_id=tenant_id,
+            owner=owner_user_id,
         )
 
     def write_compliance_edges(self, contract_id, edges, tenant_id=DEMO_TENANT):
@@ -919,7 +963,13 @@ class Neo4jGraphStore(GraphStore):
         )
 
     def vector_search_similar_clauses(
-        self, embedding, tenant_id=DEMO_TENANT, top_k=5, exclude_clause_id=None, contract_id=None
+        self,
+        embedding,
+        tenant_id=DEMO_TENANT,
+        top_k=5,
+        exclude_clause_id=None,
+        contract_id=None,
+        allowed_contract_ids=None,
     ):
         # A single-document search only ever needs to rank ONE contract's own
         # (small, bounded) clause set — over-fetching from the GLOBAL vector
@@ -960,6 +1010,7 @@ class Neo4jGraphStore(GraphStore):
             CALL db.index.vector.queryNodes('clause_embeddings', $fetch_k, $embedding)
             YIELD node, score
             WHERE node.tenant_id = $tenant_id AND node.id <> coalesce($exclude, '')
+              AND ($allowed IS NULL OR node.contract_id IN $allowed)
             RETURN node.id AS clause_id, node.contract_id AS contract_id,
                    node.clause_type AS clause_type, node.raw_text AS raw_text,
                    node.page_number AS page_number, score AS similarity
@@ -971,15 +1022,19 @@ class Neo4jGraphStore(GraphStore):
             embedding=list(embedding),
             tenant_id=tenant_id,
             exclude=exclude_clause_id,
+            allowed=list(allowed_contract_ids) if allowed_contract_ids is not None else None,
         )
         return rows
 
-    def list_contracts(self, tenant_id=DEMO_TENANT):
+    def list_contracts(self, tenant_id=DEMO_TENANT, owner_user_id=None):
         return self._run(
             "MATCH (c:Contract {tenant_id: $tenant_id}) "
-            "RETURN c.id AS contract_id, c.filename AS filename "
+            "WHERE ($owner IS NULL OR c.uploaded_by_user_id = $owner) "
+            "RETURN c.id AS contract_id, c.filename AS filename, "
+            "c.uploaded_by_user_id AS uploaded_by_user_id "
             "ORDER BY c.upload_date DESC",
             tenant_id=tenant_id,
+            owner=owner_user_id,
         )
 
     def get_override_relationships(self, clause_id, tenant_id=DEMO_TENANT):

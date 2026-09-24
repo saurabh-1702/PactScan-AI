@@ -21,6 +21,8 @@ from sqlalchemy.orm import Session
 from app.agents.notifications.notify import notify_restore_decision
 from app.agents.restore.executor import RestoreNotAuthorizedError, apply_approved_restore
 from app.agents.restore.restore_agent import RestoreInputError, create_restore_request
+from app.agents.detect.graph_store import GraphStore, get_graph_store
+from app.api.access import ensure_contract_access, visible_contract_ids
 from app.api.deps import CurrentUser, get_current_user, require_role
 from app.db.models import DocumentVersion, RestoreRequest, User
 from app.db.postgres_client import get_db
@@ -29,6 +31,10 @@ from app.models.restore import CreateRestoreRequest, DecideRestoreRequest, Resto
 logger = logging.getLogger("pactscan.api.restore_requests")
 
 router = APIRouter(prefix="/api/restore-requests", tags=["restore"])
+
+
+def get_store() -> GraphStore:
+    return get_graph_store()
 
 
 def _to_out(request: RestoreRequest, db: Session) -> RestoreRequestOut:
@@ -54,8 +60,10 @@ def _to_out(request: RestoreRequest, db: Session) -> RestoreRequestOut:
 def create_request(
     body: CreateRestoreRequest,
     db: Session = Depends(get_db),
+    store: GraphStore = Depends(get_store),
     current_user: CurrentUser = Depends(get_current_user),
 ) -> RestoreRequestOut:
+    ensure_contract_access(store, current_user, body.contract_id)
     try:
         request = create_restore_request(
             db,
@@ -74,9 +82,13 @@ def create_request(
 def list_requests(
     status: str | None = Query(default=None),
     db: Session = Depends(get_db),
+    store: GraphStore = Depends(get_store),
     current_user: CurrentUser = Depends(get_current_user),
 ) -> list[RestoreRequestOut]:
     q = db.query(RestoreRequest).filter(RestoreRequest.tenant_id == current_user.tenant_id)
+    visible = visible_contract_ids(store, current_user)
+    if visible is not None:
+        q = q.filter(RestoreRequest.contract_id.in_(visible))
     if status:
         q = q.filter(RestoreRequest.status == status)
     rows = q.order_by(RestoreRequest.created_at).all()

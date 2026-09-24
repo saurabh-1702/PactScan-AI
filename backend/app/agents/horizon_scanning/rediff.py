@@ -101,7 +101,8 @@ async def rediff_regulation_update(
         )
         findings_by_contract.setdefault(clause.contract_id, []).append(finding)
 
-    filenames = {c["contract_id"]: c["filename"] for c in store.list_contracts(tenant_id=tenant_id)}
+    contracts = {c["contract_id"]: c for c in store.list_contracts(tenant_id=tenant_id)}
+    filenames = {cid: c["filename"] for cid, c in contracts.items()}
 
     details: list[dict] = []
     total_new = 0
@@ -110,7 +111,13 @@ async def rediff_regulation_update(
         if not new:
             continue  # this simulated update was already re-diffed against this contract
         filename = filenames.get(contract_id, contract_id)
-        notify_new_findings(db, tenant_id, filename, new)
+        notify_new_findings(
+            db,
+            tenant_id,
+            filename,
+            new,
+            contract_owner_user_id=contracts.get(contract_id, {}).get("uploaded_by_user_id"),
+        )
         total_new += len(new)
         details.append(
             {

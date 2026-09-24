@@ -7,7 +7,7 @@ POST /api/notifications/{id}/mark-read    -> mark one as read
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import or_
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.api.deps import CurrentUser, get_current_user
@@ -24,13 +24,22 @@ def list_notifications(
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
 ) -> list[NotificationOut]:
-    q = db.query(Notification).filter(
-        Notification.tenant_id == current_user.tenant_id,
-        or_(
+    if current_user.role == "end_user":
+        # own targeted notifications + tenant broadcasts, but only broadcasts
+        # about contracts this user uploaded
+        visible = or_(
+            Notification.recipient_user_id == current_user.user_id,
+            and_(
+                Notification.recipient_user_id.is_(None),
+                Notification.contract_owner_user_id == current_user.user_id,
+            ),
+        )
+    else:
+        visible = or_(
             Notification.recipient_user_id.is_(None),
             Notification.recipient_user_id == current_user.user_id,
-        ),
-    )
+        )
+    q = db.query(Notification).filter(Notification.tenant_id == current_user.tenant_id, visible)
     if unread_only:
         q = q.filter(Notification.is_read.is_(False))
     rows = q.order_by(Notification.created_at.desc()).all()

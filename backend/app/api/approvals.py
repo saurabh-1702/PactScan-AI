@@ -29,6 +29,7 @@ from app.agents.fix_and_learn.executor import (
 )
 from app.agents.fix_and_learn.playbook_feedback import record_accepted_redline
 from app.agents.notifications.notify import notify_approval_decision
+from app.api.access import ensure_contract_access, visible_contract_ids
 from app.api.deps import CurrentUser, get_current_user, require_role
 from app.db.models import Approval, AuditLog, RedlineSuggestion, User
 from app.db.postgres_client import get_db
@@ -84,6 +85,7 @@ def create_approval(
     suggestion = db.get(RedlineSuggestion, body.redline_suggestion_id)
     if suggestion is None or suggestion.tenant_id != current_user.tenant_id:
         raise HTTPException(404, f"redline_suggestion {body.redline_suggestion_id!r} not found")
+    ensure_contract_access(store, current_user, suggestion.contract_id)
 
     approval = Approval(redline_suggestion_id=suggestion.id, status="pending")
     db.add(approval)
@@ -112,6 +114,9 @@ def list_approvals(
         .join(RedlineSuggestion, Approval.redline_suggestion_id == RedlineSuggestion.id)
         .filter(RedlineSuggestion.tenant_id == current_user.tenant_id)
     )
+    visible = visible_contract_ids(store, current_user)
+    if visible is not None:
+        q = q.filter(RedlineSuggestion.contract_id.in_(visible))
     if status:
         q = q.filter(Approval.status == status)
     rows = q.order_by(Approval.created_at).all()

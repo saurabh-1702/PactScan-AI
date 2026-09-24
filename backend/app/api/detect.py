@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.agents.detect.graph_store import GraphStore, get_graph_store
 from app.agents.detect.pipeline import get_report, ingest_and_detect
+from app.api.access import ensure_contract_access
 from app.api.deps import CurrentUser, get_current_user
 from app.db.postgres_client import get_db
 from app.models.clause import DetectReport
@@ -55,7 +56,12 @@ async def detect(
     tmp_path.write_bytes(data)
     try:
         report = await ingest_and_detect(
-            store, tmp_path, filename, tenant_id=current_user.tenant_id, db=db
+            store,
+            tmp_path,
+            filename,
+            tenant_id=current_user.tenant_id,
+            db=db,
+            uploaded_by_user_id=current_user.user_id,
         )
     except RuntimeError as exc:
         logger.exception("Detect pipeline failed")
@@ -76,6 +82,7 @@ async def get_detect(
     store: GraphStore = Depends(get_store),
     current_user: CurrentUser = Depends(get_current_user),
 ) -> DetectReport:
+    ensure_contract_access(store, current_user, contract_id)
     report = get_report(store, contract_id, tenant_id=current_user.tenant_id)
     if report is None:
         raise HTTPException(status_code=404, detail=f"Contract {contract_id!r} not found.")

@@ -22,6 +22,7 @@ from app.agents.suggest.pipeline import (
     suggest_from_finding,
     suggest_standalone,
 )
+from app.api.access import ensure_contract_access
 from app.api.deps import CurrentUser, enforce_draft_rate_limit
 from app.db.postgres_client import get_db
 from app.models.redline import StandaloneSuggestRequest, SuggestResult
@@ -42,6 +43,11 @@ async def suggest_from_finding_endpoint(
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(enforce_draft_rate_limit),
 ) -> SuggestResult:
+    finding = store.find_finding_by_id(finding_id, tenant_id=current_user.tenant_id)
+    if finding is not None:
+        clause = store.get_clause_by_id(finding.clause_id, tenant_id=current_user.tenant_id)
+        if clause is not None:
+            ensure_contract_access(store, current_user, clause.contract_id)
     try:
         return await suggest_from_finding(
             store,
@@ -64,6 +70,7 @@ async def suggest_standalone_endpoint(
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(enforce_draft_rate_limit),
 ) -> SuggestResult:
+    ensure_contract_access(store, current_user, body.contract_id)
     try:
         return await suggest_standalone(
             store,
