@@ -55,6 +55,7 @@ def _to_out(
     requester = (
         db.get(User, suggestion.requested_by_user_id) if suggestion.requested_by_user_id else None
     )
+    decider = db.get(User, approval.decided_by_user_id) if approval.decided_by_user_id else None
     return ApprovalOut(
         id=approval.id,
         redline_suggestion_id=approval.redline_suggestion_id,
@@ -62,6 +63,7 @@ def _to_out(
         reviewer_note=approval.reviewer_note,
         edited_text=approval.edited_text,
         decided_at=approval.decided_at,
+        decided_by_email=decider.email if decider else None,
         created_at=approval.created_at,
         requested_by_user_id=suggestion.requested_by_user_id,
         requested_by_email=requester.email if requester else None,
@@ -157,6 +159,7 @@ def decide_approval(
     approval.status = body.decision
     approval.reviewer_note = body.note
     approval.edited_text = body.edited_text
+    approval.decided_by_user_id = current_user.user_id
     approval.decided_at = datetime.now(timezone.utc)
     db.add(
         AuditLog(

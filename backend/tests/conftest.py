@@ -571,8 +571,17 @@ def _no_real_redis_in_mocked_tests(monkeypatch):
     # own globals at call time — app.dependency_overrides has no effect there).
     _app.dependency_overrides[deps_get_rate_limiter] = lambda: limiter
     monkeypatch.setattr("app.core.rate_limit.get_rate_limiter", lambda: limiter)
-    yield
+
+    # Same for job progress: never touch a real Redis from the mocked suite.
+    from app.core import progress as _progress
+
+    tracker = _progress.InMemoryProgressTracker()
+    original_getter = _progress.get_progress_tracker
+    _app.dependency_overrides[original_getter] = lambda: tracker
+    monkeypatch.setattr("app.core.progress.get_progress_tracker", lambda: tracker)
+    yield tracker
     _app.dependency_overrides.pop(deps_get_rate_limiter, None)
+    _app.dependency_overrides.pop(original_getter, None)
 
 
 @pytest.fixture

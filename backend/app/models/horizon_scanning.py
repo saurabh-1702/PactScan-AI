@@ -22,3 +22,24 @@ class SimulateUpdateResult(BaseModel):
     contracts_flagged: int
     findings_created: int
     details: list[AffectedContract]
+
+
+class AffectedContractRef(BaseModel):
+    contract_id: str
+    filename: str
+
+
+class RegulationUpdateOut(BaseModel):
+    """One entry in the regulatory-update log."""
+
+    id: str
+    regulation_name: str
+    jurisdiction: str | None = None
+    section: str
+    text: str
+    effective_date: str | None = None
+    # "update" = an amendment added through Horizon-Scanning (simulated);
+    # "baseline" = a clause seeded at startup.
+    kind: str
+    # contracts (visible to the caller) that this update produced findings on
+    affected_contracts: list[AffectedContractRef] = []

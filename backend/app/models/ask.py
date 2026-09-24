@@ -37,6 +37,9 @@ class ScopeClassification(BaseModel):
 class AskSource(BaseModel):
     document_name: str
     page_number: int
+    # the quoted passage the answer relied on - filled in by the backend from
+    # what was actually retrieved, never taken from the model's own output
+    excerpt: str | None = None
 
 
 class AskAnswer(BaseModel):

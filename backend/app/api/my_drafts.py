@@ -21,7 +21,7 @@ from app.agents.detect.graph_store import GraphStore, get_graph_store
 from app.agents.suggest.pipeline import SubmissionError, enqueue_for_review
 from app.api.access import ensure_contract_access
 from app.api.deps import CurrentUser, get_current_user
-from app.db.models import Approval, DocumentVersion, RedlineSuggestion
+from app.db.models import Approval, DocumentVersion, RedlineSuggestion, User
 from app.db.postgres_client import get_db
 from app.models.drafts import DraftOut, SubmitDraftRequest
 
@@ -43,6 +43,11 @@ def _build(db: Session, store: GraphStore, sg: RedlineSuggestion, filenames: dic
     version = None
     if approval is not None and approval.status == "approved":
         version = db.query(DocumentVersion).filter(DocumentVersion.approval_id == approval.id).first()
+    decider = (
+        db.get(User, approval.decided_by_user_id)
+        if approval is not None and approval.decided_by_user_id
+        else None
+    )
     return DraftOut(
         suggestion_id=sg.id,
         contract_id=sg.contract_id,
@@ -62,6 +67,7 @@ def _build(db: Session, store: GraphStore, sg: RedlineSuggestion, filenames: dic
         created_at=sg.created_at,
         submitted_at=approval.created_at if approval else None,
         decided_at=approval.decided_at if approval else None,
+        decided_by_email=decider.email if decider else None,
     )
 
 

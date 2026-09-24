@@ -464,6 +464,7 @@ class InMemoryGraphStore(GraphStore):
                 "contract_id": c["id"],
                 "filename": c["filename"],
                 "uploaded_by_user_id": c.get("uploaded_by_user_id"),
+                "upload_date": c["upload_date"],
             }
             for c in matches
         ]
@@ -1031,7 +1032,8 @@ class Neo4jGraphStore(GraphStore):
             "MATCH (c:Contract {tenant_id: $tenant_id}) "
             "WHERE ($owner IS NULL OR c.uploaded_by_user_id = $owner) "
             "RETURN c.id AS contract_id, c.filename AS filename, "
-            "c.uploaded_by_user_id AS uploaded_by_user_id "
+            "c.uploaded_by_user_id AS uploaded_by_user_id, "
+            "toString(c.upload_date) AS upload_date "
             "ORDER BY c.upload_date DESC",
             tenant_id=tenant_id,
             owner=owner_user_id,

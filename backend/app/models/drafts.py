@@ -40,3 +40,4 @@ class DraftOut(BaseModel):
     created_at: datetime
     submitted_at: datetime | None
     decided_at: datetime | None
+    decided_by_email: str | None = None

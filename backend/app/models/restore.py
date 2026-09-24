@@ -31,4 +31,5 @@ class RestoreRequestOut(BaseModel):
     reviewer_note: str | None
     abuse_flagged: bool
     decided_at: datetime | None
+    decided_by_email: str | None = None
     created_at: datetime

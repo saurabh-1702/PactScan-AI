@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from app.agents.detect import graph_writer, ingest
 from app.agents.detect.detect_agent import run_detect
 from app.agents.detect.graph_store import DEMO_TENANT, GraphStore
+from app.core.progress import JobProgress
 from app.models.clause import DetectReport
 
 if TYPE_CHECKING:
@@ -26,15 +27,39 @@ async def ingest_and_detect(
     contract_id: str | None = None,
     db: "Session | None" = None,
     uploaded_by_user_id: str | None = None,
+    progress: JobProgress | None = None,
 ) -> DetectReport:
     """``db`` is optional (Phase 3) — when provided, the original upload (or a
     synthesized .docx reconstruction, if it wasn't already a .docx) is
     captured as document_versions version 1. Omitting it preserves exact
     Phase 1/2 behaviour for existing callers/tests."""
+    progress = progress or JobProgress()
+    try:
+        return await _run(
+            store, file_path, filename, tenant_id, contract_id, db, uploaded_by_user_id, progress
+        )
+    except Exception as exc:
+        progress.fail(str(exc) or exc.__class__.__name__)
+        raise
+
+
+async def _run(
+    store: GraphStore,
+    file_path: str | Path,
+    filename: str,
+    tenant_id: str,
+    contract_id: str | None,
+    db: "Session | None",
+    uploaded_by_user_id: str | None,
+    progress: JobProgress,
+) -> DetectReport:
     contract_id = contract_id or f"ct_{uuid.uuid4().hex[:12]}"
 
+    progress.advance("parse")
     parsed = ingest.parse_document(file_path)
+    progress.advance("extract")
     clauses = await ingest.extract_clauses(parsed, contract_id)
+    progress.advance("graph")
     await graph_writer.write_contract_graph(
         store,
         contract_id,
@@ -43,8 +68,10 @@ async def ingest_and_detect(
         tenant_id=tenant_id,
         uploaded_by_user_id=uploaded_by_user_id,
     )
+    progress.advance("check")
     findings = await run_detect(store, contract_id, tenant_id=tenant_id)
 
+    progress.advance("save")
     if db is not None:
         from app.agents.fix_and_learn.document_store import ensure_initial_version
         from app.agents.notifications.notify import notify_new_findings
@@ -57,6 +84,7 @@ async def ingest_and_detect(
             db, tenant_id, filename, findings, contract_owner_user_id=uploaded_by_user_id
         )
 
+    progress.finish()
     return DetectReport(
         contract_id=contract_id,
         filename=filename,

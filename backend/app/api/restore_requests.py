@@ -40,6 +40,7 @@ def get_store() -> GraphStore:
 def _to_out(request: RestoreRequest, db: Session) -> RestoreRequestOut:
     target = db.get(DocumentVersion, request.target_version_id)
     requester = db.get(User, request.requested_by_user_id)
+    decider = db.get(User, request.decided_by_user_id) if request.decided_by_user_id else None
     return RestoreRequestOut(
         id=request.id,
         contract_id=request.contract_id,
@@ -52,6 +53,7 @@ def _to_out(request: RestoreRequest, db: Session) -> RestoreRequestOut:
         reviewer_note=request.reviewer_note,
         abuse_flagged=request.abuse_flagged,
         decided_at=request.decided_at,
+        decided_by_email=decider.email if decider else None,
         created_at=request.created_at,
     )
 
@@ -113,6 +115,7 @@ def decide_request(
 
     request.status = body.decision
     request.reviewer_note = body.note
+    request.decided_by_user_id = current_user.user_id
     request.decided_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(request)

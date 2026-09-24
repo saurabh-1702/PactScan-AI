@@ -45,4 +45,21 @@ async def generate_answer(question: str, items: list[AskRetrievedItem]) -> AskAn
     # wasn't actually part of the retrieved context.
     valid_names = {it.document_name for it in items}
     answer.sources = [s for s in answer.sources if s.document_name in valid_names]
+    for source in answer.sources:
+        source.excerpt = _excerpt_for(source, items)
     return answer
+
+
+_EXCERPT_CHARS = 320
+
+
+def _excerpt_for(source, items: list[AskRetrievedItem]) -> str | None:
+    """The retrieved passage this citation points at: same document and page
+    if there is one, else the first passage from that document."""
+    same_doc = [it for it in items if it.document_name == source.document_name]
+    match = next((it for it in same_doc if it.page_number == source.page_number), None)
+    match = match or (same_doc[0] if same_doc else None)
+    if match is None or not match.text:
+        return None
+    text = " ".join(match.text.split())
+    return text if len(text) <= _EXCERPT_CHARS else text[: _EXCERPT_CHARS - 1].rstrip() + "…"

@@ -27,6 +27,7 @@ class ApprovalOut(BaseModel):
     reviewer_note: str | None
     edited_text: str | None
     decided_at: datetime | None
+    decided_by_email: str | None = None
     # created_at = when this draft entered the review queue (i.e. when the
     # requester submitted it, once Phase 6b's preview-then-submit flow landed)
     created_at: datetime

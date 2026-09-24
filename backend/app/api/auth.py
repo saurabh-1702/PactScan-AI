@@ -10,9 +10,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.security import create_access_token, hash_password, verify_password
+from app.api.deps import CurrentUser, get_current_user
 from app.db.models import Tenant, User
 from app.db.postgres_client import get_db
 from app.models.auth import LoginRequest, RegisterRequest, TokenResponse
+from app.models.contracts import MeOut
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -46,3 +48,21 @@ def login(body: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
 
     token = create_access_token(user.id, user.tenant_id, user.role)
     return TokenResponse(access_token=token, tenant_id=user.tenant_id, role=user.role)
+
+
+@router.get("/me", response_model=MeOut)
+def me(
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
+) -> MeOut:
+    user = db.get(User, current_user.user_id)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Account no longer exists.")
+    tenant = db.get(Tenant, user.tenant_id)
+    return MeOut(
+        user_id=user.id,
+        email=user.email,
+        role=user.role,
+        tenant_id=user.tenant_id,
+        tenant_name=tenant.name if tenant else user.tenant_id,
+    )

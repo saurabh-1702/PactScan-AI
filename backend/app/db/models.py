@@ -82,6 +82,9 @@ class Approval(Base):
     status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
     reviewer_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     edited_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Who made the decision (a reviewer/admin) — shown to the requester and in
+    # the queue history.
+    decided_by_user_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
@@ -278,6 +281,7 @@ class RestoreRequest(Base):
     # already-approved restores for this contract within the flagging window.
     # Never blocks; only surfaces a warning banner in the approval queue.
     abuse_flagged: Mapped[bool] = mapped_column(Boolean, default=False)
+    decided_by_user_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)

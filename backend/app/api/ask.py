@@ -20,7 +20,8 @@ from app.agents.detect.graph_store import GraphStore, get_graph_store
 from app.agents.ask.pipeline import ChatSessionAccessError, handle_ask, handle_attachment
 from app.api.access import owner_scope
 from app.api.deps import CurrentUser, get_current_user
-from app.api.detect import _ALLOWED_SUFFIXES
+from app.api.detect import _ALLOWED_SUFFIXES, _valid_job_id
+from app.core.progress import JobProgress
 from app.db.models import ChatMessage, ChatSession
 from app.db.postgres_client import get_db
 from app.models.ask import AskRequest, AskResponse, AskSource, ChatMessageOut, ChatSessionOut
@@ -62,6 +63,7 @@ async def ask(
 async def attach_file(
     file: UploadFile = File(...),
     session_id: str | None = Form(default=None),
+    job_id: str | None = Form(default=None),
     store: GraphStore = Depends(get_store),
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
@@ -92,6 +94,9 @@ async def attach_file(
             session_id,
             tenant_id=current_user.tenant_id,
             user_id=current_user.user_id,
+            progress=JobProgress.begin(
+                _valid_job_id(job_id), current_user.user_id, current_user.tenant_id, f"Analysing {filename}"
+            ),
         )
     except ChatSessionAccessError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

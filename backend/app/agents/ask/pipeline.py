@@ -183,6 +183,7 @@ async def handle_attachment(
     session_id: str | None,
     tenant_id: str = DEMO_TENANT,
     user_id: str | None = None,
+    progress=None,
 ) -> AskResponse:
     """A file attached in chat is a REAL upload: the same Detect pipeline as
     /detect (findings, notifications, a stored document version), owned by the
@@ -198,6 +199,7 @@ async def handle_attachment(
         tenant_id=tenant_id,
         db=db,
         uploaded_by_user_id=user_id,
+        progress=progress,
     )
     session.active_contract_id = report.contract_id
 
