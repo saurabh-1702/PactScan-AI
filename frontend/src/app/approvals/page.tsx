@@ -501,7 +501,9 @@ export default function ApprovalsPage() {
                       </span>
                       <span className="font-medium">Restore to v{r.target_version_number}</span>
                       <span className="text-xs text-neutral-400">
-                        contract {r.contract_id} · decided{" "}
+                        contract {r.contract_id} · requested by{" "}
+                        {r.requested_by_email ?? "unknown"} on{" "}
+                        {new Date(r.created_at).toLocaleString()} · decided{" "}
                         {r.decided_at ? new Date(r.decided_at).toLocaleString() : "—"}
                       </span>
                       {r.status === "approved" && latest && (
