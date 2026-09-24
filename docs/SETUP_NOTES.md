@@ -600,3 +600,33 @@ Neither Part A ("link to each affected contract's findings") nor Part B ("list a
 
 **The bug:** manually triggering `/api/horizon-scanning/simulate-update` against a real, already-Detect-scanned contract returned "0 contracts newly flagged" even for a regulation clause that should obviously have matched. Root cause: Detect never embeds a contract's clauses itself — embedding has always been lazy, only ever triggered by Suggest (`ensure_embeddings_for_contract`) or Ask's portfolio-question path (`backfill_all`). A contract that had only ever been through Detect (never Suggested-on or Asked-about) had zero embedded clauses, so the portfolio-wide vector search (`vector_search_similar_clauses(contract_id=None)`, which queries Neo4j's `clause_embeddings` index directly) had nothing to find — not a similarity-threshold problem, an empty-index problem.
 **The fix, applied (`app/agents/horizon_scanning/rediff.py`):** call `backfill_all(store, tenant_id=tenant_id)` before embedding the new regulation clause and searching — the exact same fix Ask's `ask_retriever.py` already needed for its own portfolio-question path, for the identical underlying reason. **Any new code that does a portfolio-wide vector search must backfill embeddings for the tenant first — Detect alone never populates them.**
+
+---
+
+## Phase 6b — realism fixes from manual testing (ownership, draft flow, attachments)
+
+Five changes that came out of the user manually testing Phases 4-6, made before Phase 7. Several are described in more detail in `PactScan_AI_Ideas_And_Scope_Additions_Log.md`; this section records the *design decisions* and the traps.
+
+### Ownership: an end_user only sees contracts they uploaded
+
+No contract recorded who uploaded it, so the seeded end_user and reviewer shared one dashboard — and Ask, contract pages, approvals, documents, restore requests and notifications were all merely tenant-scoped. The rule (`app/api/access.py`, applied everywhere rather than re-derived per endpoint): **end_user -> own contracts only; reviewer/admin -> the whole tenant.** `Contract.uploaded_by_user_id` is set from the JWT at upload; `GraphStore.list_contracts` / `get_all_findings` take an owner filter, and `vector_search_similar_clauses` takes `allowed_contract_ids` so Ask's portfolio search can be limited to a set of contracts. Notifications gained `contract_owner_user_id`: an end_user only sees new-finding broadcasts about their own contracts. An end_user asking about someone else's contract gets a 404 (not 403 — don't reveal it exists). Contracts uploaded before this have no owner, so an end_user won't see them (a DB reset clears this).
+
+Found on the way: Ask's status summary queried `redline_suggestions` with **no tenant filter at all** — fixed while adding the owner scope.
+
+### Drafting is now separate from submitting
+
+`suggest_*` used to run the AI and immediately put the result in the reviewer's queue. Now the API and Ask only **draft** (`submit_for_review=False`); the requester previews the AI text, optionally edits it, then submits via `POST /api/my-drafts/{id}/submit`. `enqueue_for_review()` is the single place an `Approval` is created. The agent-level default stays `submit_for_review=True`, so direct pipeline callers and their tests keep the old one-step behaviour — only the two user-facing entry points changed.
+
+Three texts can exist for one suggestion and are stored separately so nothing is overwritten: the AI draft (`RedlineSuggestion.proposed_text`), the requester's edit (`requester_edited_text`, recorded only if it genuinely differs), and the reviewer's edit at decision time (`Approval.edited_text`). `RedlineSuggestion.submitted_text` (requester's edit, else the AI text) is the baseline the Executor writes when the reviewer doesn't edit, that the playbook-learning loop records, and that the "reviewer wrote their own edit" notification compares against. `/my-drafts` shows all three, with a word-level diff (`frontend/src/lib/diff.ts`, an LCS diff — no dependency) of where the reviewer changed what the requester submitted.
+
+### Attaching a file in Ask is a real upload, and the chat remembers it
+
+`POST /api/ask/attach` runs the full Detect pipeline (findings, notifications, a stored document version), owned by the uploader, and sets `ChatSession.active_contract_id`. **Ask has no memory of earlier turns**, so without an active document a follow-up like "what does it say about liability?" couldn't know which file was meant. A question that names no document now defaults to the active one; naming a document still takes precedence; a "✕" chip detaches it. The alternative — parsing the file only for that chat, saving nothing — was rejected: it would have needed a new code path, produced no findings, and couldn't be drafted against or restored.
+
+### Verification note
+
+The mocked suite uses the in-memory graph, so none of the new Cypher had touched Neo4j. Exercised against the real container before committing: the owner filter (hit and miss), the uploader property round-trip, scoped vs unscoped `get_all_findings`, and the vector-search allow-list including a positive case against contracts that really have embeddings.
+
+### Line endings
+
+My scripted edits on Windows had silently rewritten 27 files as CRLF (two already committed that way) in a repo that is LF. Normalized back and added a `.gitattributes` (`* text=auto eol=lf`). See Known Issues §13.3.

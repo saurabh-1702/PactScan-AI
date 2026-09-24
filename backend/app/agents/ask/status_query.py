@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
-from app.agents.ask.ask_retriever import find_contract_by_name
+from app.agents.ask.ask_retriever import contract_by_id, find_contract_by_name
 from app.agents.detect.graph_store import DEMO_TENANT, GraphStore
 from app.db.models import Approval, RedlineSuggestion
 from app.llm import client as llm
@@ -79,10 +79,17 @@ def build_status_summary(
     time_reference: str | None,
     tenant_id: str = DEMO_TENANT,
     owner_user_id: str | None = None,
+    contract_id_override: str | None = None,
 ) -> dict:
     document_name = None
     contract_id = None
-    if document_scope == DocumentScope.SINGLE:
+    if contract_id_override is not None:
+        match = contract_by_id(store, contract_id_override, tenant_id, owner_user_id)
+        if match is None:
+            return {"items": [], "not_found": True, "document_name": "the attached document"}
+        contract_id = match["contract_id"]
+        document_name = match["filename"]
+    elif document_scope == DocumentScope.SINGLE:
         match = find_contract_by_name(
             store, mentioned_document_name or "", tenant_id=tenant_id, owner_user_id=owner_user_id
         )

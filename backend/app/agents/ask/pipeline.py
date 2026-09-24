@@ -23,9 +23,10 @@ from app.agents.ask.general_legal import answer_general_question
 from app.agents.ask.scope_classifier import classify_scope
 from app.agents.ask.status_query import build_status_summary, generate_status_answer
 from app.agents.detect.graph_store import DEMO_TENANT, GraphStore
+from app.agents.detect.pipeline import ingest_and_detect
 from app.core.rate_limit import DraftRateLimitExceeded, check_draft_rate_limit
 from app.db.models import ChatMessage, ChatSession
-from app.models.ask import AskResponse, AskResponseType, AskScope
+from app.models.ask import AskResponse, AskResponseType, AskScope, DocumentScope
 
 logger = logging.getLogger("pactscan.ask.pipeline")
 
@@ -59,8 +60,17 @@ async def handle_ask(
     _record_message(db, session.id, role="user", content=message)
 
     classification = await classify_scope(message)
+    # A question that names no document defaults to the conversation's active
+    # (attached) one; naming a document still takes precedence.
+    active = None
+    if (
+        session.active_contract_id
+        and classification.document_scope == DocumentScope.PORTFOLIO
+        and not classification.mentioned_document_name
+    ):
+        active = session.active_contract_id
     response = await _route(
-        store, db, message, classification, tenant_id, user_id, owner_user_id
+        store, db, message, classification, tenant_id, user_id, owner_user_id, active
     )
     response.session_id = session.id
 
@@ -88,6 +98,7 @@ async def _route(
     tenant_id: str,
     user_id: str | None = None,
     owner_user_id: str | None = None,
+    active_contract_id: str | None = None,
 ) -> AskResponse:
     if classification.scope == AskScope.OUT_OF_SCOPE:
         return AskResponse(session_id="", type=AskResponseType.OUT_OF_SCOPE, answer_text=_OUT_OF_SCOPE_MESSAGE)
@@ -120,6 +131,7 @@ async def _route(
             tenant_id=tenant_id,
             requested_by_user_id=user_id,
             owner_user_id=owner_user_id,
+            contract_id_override=active_contract_id,
         )
 
     if classification.scope == AskScope.COMPLIANCE_STATUS_QUESTION:
@@ -131,6 +143,7 @@ async def _route(
             classification.time_reference,
             tenant_id=tenant_id,
             owner_user_id=owner_user_id,
+            contract_id_override=active_contract_id,
         )
         if summary.get("not_found"):
             label = summary.get("document_name") or "that document"
@@ -152,6 +165,7 @@ async def _route(
         classification.mentioned_document_name,
         tenant_id=tenant_id,
         owner_user_id=owner_user_id,
+        contract_id_override=active_contract_id,
     )
     if retrieval.abstain:
         return AskResponse(session_id="", type=AskResponseType.ABSTAINED, answer_text=retrieval.abstain_reason)
@@ -159,6 +173,59 @@ async def _route(
     return AskResponse(
         session_id="", type=AskResponseType.CONTRACT_ANSWER, answer_text=answer.answer_text, sources=answer.sources
     )
+
+
+async def handle_attachment(
+    store: GraphStore,
+    db: Session,
+    file_path,
+    filename: str,
+    session_id: str | None,
+    tenant_id: str = DEMO_TENANT,
+    user_id: str | None = None,
+) -> AskResponse:
+    """A file attached in chat is a REAL upload: the same Detect pipeline as
+    /detect (findings, notifications, a stored document version), owned by the
+    uploader, and it becomes the conversation's active document so follow-up
+    questions can just say "it"."""
+    session = _get_or_create_session(db, session_id, tenant_id, user_id, f"📎 {filename}")
+    _record_message(db, session.id, role="user", content=f"📎 Attached {filename}")
+
+    report = await ingest_and_detect(
+        store,
+        file_path,
+        filename,
+        tenant_id=tenant_id,
+        db=db,
+        uploaded_by_user_id=user_id,
+    )
+    session.active_contract_id = report.contract_id
+
+    by_sev: dict[str, int] = {}
+    for f in report.findings:
+        by_sev[f.severity.value] = by_sev.get(f.severity.value, 0) + 1
+    if report.total_findings == 0:
+        found = "I found no compliance issues."
+    else:
+        breakdown = ", ".join(f"{n} {sev}" for sev, n in sorted(by_sev.items()))
+        found = f"I found {report.total_findings} compliance finding(s) ({breakdown})."
+    text = (
+        f"I've analysed {filename} and added it to your contracts. {found} "
+        "You can now ask questions about it — you don't need to name it."
+    )
+
+    response = AskResponse(
+        session_id=session.id,
+        type=AskResponseType.FILE_ATTACHED,
+        answer_text=text,
+        contract_id=report.contract_id,
+    )
+    _record_message(
+        db, session.id, role="assistant", content=text, response_type=response.type.value
+    )
+    session.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    return response
 
 
 def _get_or_create_session(

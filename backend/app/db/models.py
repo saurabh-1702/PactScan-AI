@@ -221,6 +221,11 @@ class ChatSession(Base):
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: f"cs_{uuid.uuid4().hex[:16]}")
     tenant_id: Mapped[str] = mapped_column(String(40), index=True)
     user_id: Mapped[str | None] = mapped_column(String(40), index=True, nullable=True)
+    # The contract this conversation is currently "about" (Phase 6b) — set when
+    # the user attaches a file in chat. Ask has no memory of earlier turns, so
+    # without this a follow-up like "what does it say about liability?" (no
+    # filename) couldn't know which document was meant.
+    active_contract_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     title: Mapped[str] = mapped_column(String(200), default="New conversation")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)

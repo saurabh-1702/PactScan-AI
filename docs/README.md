@@ -14,6 +14,22 @@ This folder holds the project specification and the phase-by-phase build plan.
 
 ## Current status
 
+**Phase 6b — realism fixes from manual testing (built on the Phase 6 branch, before Phase 7).**
+Five changes the user identified while testing:
+- **Ownership** — an end_user sees only contracts they uploaded (dashboard, contract pages,
+  approvals, documents, restore, Ask, notifications); reviewers/admins see the whole tenant.
+- **Requester + time** on every approval and restore request, for reviewers.
+- **Draft, then submit** — Suggest and Ask only draft; the requester previews the AI text,
+  may edit it, then submits it as the AI draft or their own edited version.
+- **My Drafts** (`/my-drafts`) — the AI draft, the requester's edit, and a highlighted diff of
+  where the reviewer changed it, plus the reviewer's note and a download link.
+- **Attach a file in Ask** — a real upload (full Detect run) that the chat remembers as its
+  "active document", so follow-ups don't need to name it.
+- Tests: 88 mocked pass (18 new: ownership, draft-submit flow, attachments); the new graph
+  queries were also run against real Neo4j. **Requires a dev DB reset** (new Contract /
+  Notification / redline_suggestions / chat_sessions columns) — `docker compose down -v`.
+  Not yet manually tested end to end in the browser.
+
 **Phase 6 built — Horizon-Scanning (simulated) + Document Restore.** Demonstrates the
 project's strongest differentiator: an already-signed, already-reviewed contract gets
 re-flagged automatically when a *new* regulation clause lands, without anyone

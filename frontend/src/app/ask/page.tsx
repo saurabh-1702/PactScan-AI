@@ -4,10 +4,12 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import DraftSubmitPanel from "@/components/DraftSubmitPanel";
 import {
+  clearActiveDocument,
   getMyDraft,
   getChatMessages,
   getChatSessions,
   postAsk,
+  postAskAttach,
   type AskResponseType,
   type AskSourceInfo,
   type ChatSessionInfo,
@@ -32,6 +34,7 @@ const TYPE_LABELS: Record<AskResponseType, string> = {
   out_of_scope: "Out of scope",
   abstained: "I don't know",
   rate_limited: "Slow down",
+  file_attached: "File attached",
 };
 
 const TYPE_STYLES: Record<AskResponseType, string> = {
@@ -42,6 +45,7 @@ const TYPE_STYLES: Record<AskResponseType, string> = {
   out_of_scope: "bg-neutral-200 text-neutral-500",
   abstained: "bg-amber-100 text-amber-800",
   rate_limited: "bg-red-100 text-red-800",
+  file_attached: "bg-sky-100 text-sky-800",
 };
 
 /** The drafted edit for an Ask edit-instruction: still a draft -> preview, edit
@@ -85,6 +89,11 @@ export default function AskPage() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [attaching, setAttaching] = useState(false);
+  // the contract this conversation is currently "about" (set by attaching a file)
+  const [activeDoc, setActiveDoc] = useState<{ id: string; name: string } | null>(null);
+
   async function loadSessions() {
     try {
       setSessions(await getChatSessions());
@@ -104,6 +113,12 @@ export default function AskPage() {
   async function openSession(id: string) {
     setSessionId(id);
     setError(null);
+    const s = sessions.find((x) => x.id === id);
+    setActiveDoc(
+      s?.active_contract_id
+        ? { id: s.active_contract_id, name: s.active_filename ?? s.active_contract_id }
+        : null,
+    );
     try {
       const history = await getChatMessages(id);
       setMessages(
@@ -125,7 +140,50 @@ export default function AskPage() {
   function startNewChat() {
     setSessionId(null);
     setMessages([]);
+    setActiveDoc(null);
     setError(null);
+  }
+
+  async function onAttach(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-attaching the same file later
+    if (!file || attaching) return;
+    setError(null);
+    setAttaching(true);
+    setMessages((prev) => [
+      ...prev,
+      { id: `local-${Date.now()}`, role: "user", content: `📎 Attached ${file.name}` },
+    ]);
+    try {
+      const res = await postAskAttach(file, sessionId);
+      setSessionId(res.session_id);
+      if (res.contract_id) setActiveDoc({ id: res.contract_id, name: file.name });
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `local-${Date.now()}-a`,
+          role: "assistant",
+          content: res.answer_text,
+          responseType: res.type,
+        },
+      ]);
+      loadSessions();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not attach that file");
+    } finally {
+      setAttaching(false);
+    }
+  }
+
+  async function onDetach() {
+    if (!sessionId) return;
+    try {
+      await clearActiveDocument(sessionId);
+      setActiveDoc(null);
+      loadSessions();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not detach the document");
+    }
   }
 
   async function onSend(e: React.FormEvent) {
@@ -248,17 +306,59 @@ export default function AskPage() {
           </p>
         )}
 
+        {(activeDoc || attaching) && (
+          <div className="flex items-center gap-2 border-t border-neutral-200 bg-sky-50 px-3 py-1.5 text-xs text-sky-900">
+            {attaching ? (
+              <span>Analysing your file — this runs the full compliance check, so it can take a moment…</span>
+            ) : (
+              <>
+                <span>
+                  Asking about: <span className="font-semibold">{activeDoc?.name}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={onDetach}
+                  className="rounded px-1 font-semibold text-sky-700 hover:bg-sky-100"
+                  title="Stop treating this file as the subject of the conversation"
+                >
+                  ✕
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
         <form onSubmit={onSend} className="flex gap-2 border-t border-neutral-200 p-3">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf,.docx,.doc,.txt"
+            onChange={onAttach}
+            className="hidden"
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={attaching || sending}
+            title="Attach a contract to ask questions about it"
+            className="rounded border border-neutral-300 px-3 py-2 text-sm disabled:opacity-40"
+          >
+            📎
+          </button>
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask about your contracts, compliance status, or legal-tech topics…"
+            placeholder={
+              activeDoc
+                ? `Ask about ${activeDoc.name}…`
+                : "Ask about your contracts, compliance status, or legal-tech topics…"
+            }
             className="flex-1 rounded border border-neutral-300 px-3 py-2 text-sm"
           />
           <button
             type="submit"
-            disabled={sending || !input.trim()}
+            disabled={sending || attaching || !input.trim()}
             className="rounded bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
           >
             {sending ? "…" : "Send"}

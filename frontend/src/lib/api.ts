@@ -229,7 +229,8 @@ export type AskResponseType =
   | "general_info"
   | "out_of_scope"
   | "abstained"
-  | "rate_limited";
+  | "rate_limited"
+  | "file_attached";
 
 export interface AskSourceInfo {
   document_name: string;
@@ -243,6 +244,8 @@ export interface AskApiResponse {
   sources: AskSourceInfo[];
   suggestion_id: string | null;
   approval_id: string | null;
+  /** set for file_attached: the contract the attached file became */
+  contract_id: string | null;
 }
 
 export interface ChatSessionInfo {
@@ -251,6 +254,8 @@ export interface ChatSessionInfo {
   created_at: string;
   updated_at: string;
   message_count: number;
+  active_contract_id: string | null;
+  active_filename: string | null;
 }
 
 export interface ChatMessageInfo {
@@ -468,4 +473,22 @@ export async function submitDraft(suggestionId: string, editedText?: string): Pr
     body: JSON.stringify({ edited_text: editedText ?? null }),
   });
   return handleJson<DraftInfo>(res);
+}
+
+/** Attach a contract to an Ask conversation. This is a real upload — the full
+ * Detect pipeline runs on it (so it can take a while) — and the file becomes
+ * the conversation's active document. */
+export async function postAskAttach(file: File, sessionId?: string | null): Promise<AskApiResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  if (sessionId) form.append("session_id", sessionId);
+  const res = await authFetch("/api/ask/attach", { method: "POST", body: form });
+  return handleJson<AskApiResponse>(res);
+}
+
+export async function clearActiveDocument(sessionId: string): Promise<void> {
+  const res = await authFetch(`/api/ask/sessions/${sessionId}/active-document`, {
+    method: "DELETE",
+  });
+  await handleJson<unknown>(res);
 }

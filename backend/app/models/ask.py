@@ -67,6 +67,7 @@ class AskResponseType(str, enum.Enum):
     OUT_OF_SCOPE = "out_of_scope"
     ABSTAINED = "abstained"
     RATE_LIMITED = "rate_limited"
+    FILE_ATTACHED = "file_attached"
 
 
 class AskResponse(BaseModel):
@@ -76,6 +77,8 @@ class AskResponse(BaseModel):
     sources: list[AskSource] = Field(default_factory=list)
     suggestion_id: str | None = None
     approval_id: str | None = None
+    # set for FILE_ATTACHED: the contract the attached file became
+    contract_id: str | None = None
 
 
 class ChatSessionOut(BaseModel):
@@ -84,6 +87,8 @@ class ChatSessionOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     message_count: int = 0
+    active_contract_id: str | None = None
+    active_filename: str | None = None
 
 
 class ChatMessageOut(BaseModel):

@@ -101,3 +101,17 @@ notification to whoever requested the restore — a rejection carries the
 reviewer's note, an approval carries a direct download link to the new
 version. The user's ask, once told the Suggest-side version existed: extend
 the same idea to Restore, for consistency.
+
+## Phase 6b — realism fixes (all from the user's own manual-testing list)
+
+Listed by the user as *"Issues or Changes I thought should be there in order to make this product much more realistic and working"*. Each was assessed for viability first; all were built.
+
+**Per-user dashboard and data (Issue 1).** *"End User and Reviewer, both share the same dashboard. The End User should only be able to see the numbers … for the contracts only that he has put."* The user confirmed the rule: only end users are restricted, reviewers and admins see everything. The gap turned out to be wider than the dashboard (Ask, contract pages, approvals, documents, restore and notifications were all tenant-wide), so the same rule was applied across all of them.
+
+**Who requested a draft, and when (Issue 2).** Reviewers can now see the requester and the time on every pending/decided approval and restore request.
+
+**Preview, edit, then submit (Issue 3).** *"…first shows the draft suggested by our AI and they should also get a chance to edit the suggested fix in case they are trying to bring some changes that are required by the company's specifications."* The user confirmed it should apply to both the Suggest button and Ask's edit instructions, so the two paths behave the same.
+
+**Requester sees their own drafts and what the reviewer changed (Issue 4).** A "My Drafts" page showing the AI draft, the requester's edit, the reviewer's edit as a highlighted diff, the reviewer's note, and a download link.
+
+**Attach a file in Ask (Issue 5).** *"An Attach file button in Ask chat … so that the end user can attach their own contract file and based on that file, they may also get to ask questions."* The user chose a real upload (full Detect run, saved under the user) over a temporary question-only file, which also meant giving the chat a remembered "active document".

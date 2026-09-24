@@ -45,6 +45,20 @@ def _normalize(text: str) -> str:
 _GENERIC_NAME_TOKENS = {"contract", "agreement", "document", "the", "vendor", "dpa", "msa", "pdf", "doc", "docx"}
 
 
+def contract_by_id(
+    store: GraphStore,
+    contract_id: str,
+    tenant_id: str = DEMO_TENANT,
+    owner_user_id: str | None = None,
+) -> dict | None:
+    """The contract dict for an id, honouring the same ownership scoping as a
+    name lookup (an end_user can't resolve someone else's contract)."""
+    for c in store.list_contracts(tenant_id=tenant_id, owner_user_id=owner_user_id):
+        if c["contract_id"] == contract_id:
+            return c
+    return None
+
+
 def find_contract_by_name(
     store: GraphStore,
     name_query: str,
@@ -85,6 +99,7 @@ async def retrieve_for_content_question(
     mentioned_document_name: str | None,
     tenant_id: str = DEMO_TENANT,
     owner_user_id: str | None = None,
+    contract_id_override: str | None = None,
 ) -> RetrievalResult:
     contract_id = None
     allowed_ids: set[str] | None = None
@@ -94,7 +109,12 @@ async def retrieve_for_content_question(
             c["contract_id"]
             for c in store.list_contracts(tenant_id=tenant_id, owner_user_id=owner_user_id)
         }
-    if document_scope == DocumentScope.SINGLE:
+    if contract_id_override is not None:
+        # the conversation's attached/active document, used when the question
+        # doesn't name one
+        contract_id = contract_id_override
+        await ensure_embeddings_for_contract(store, contract_id, tenant_id=tenant_id)
+    elif document_scope == DocumentScope.SINGLE:
         match = find_contract_by_name(
             store, mentioned_document_name or "", tenant_id=tenant_id, owner_user_id=owner_user_id
         )

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from app.agents.ask.ask_retriever import find_contract_by_name
+from app.agents.ask.ask_retriever import contract_by_id, find_contract_by_name
 from app.agents.detect.graph_store import DEMO_TENANT, GraphStore
 from app.agents.suggest.embed_clauses import ensure_embeddings_for_contract
 from app.agents.suggest.pipeline import SuggestInputError, suggest_standalone
@@ -27,13 +27,17 @@ async def handle_edit_instruction(
     tenant_id: str = DEMO_TENANT,
     requested_by_user_id: str | None = None,
     owner_user_id: str | None = None,
+    contract_id_override: str | None = None,
 ) -> AskResponse:
     name = classification.mentioned_document_name
-    match = (
-        find_contract_by_name(store, name or "", tenant_id=tenant_id, owner_user_id=owner_user_id)
-        if name
-        else None
-    )
+    if name:
+        match = find_contract_by_name(
+            store, name, tenant_id=tenant_id, owner_user_id=owner_user_id
+        )
+    elif contract_id_override is not None:
+        match = contract_by_id(store, contract_id_override, tenant_id, owner_user_id)
+    else:
+        match = None
     if match is None:
         msg = (
             f"I don't have a document matching {name!r} in your portfolio."
