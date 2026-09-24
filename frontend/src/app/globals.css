@@ -1,26 +1,123 @@
 @import "tailwindcss";
 
+/*
+ * PactScan design tokens — the single source of truth for the UI.
+ * Components use the semantic utilities generated from these (bg-canvas,
+ * text-ink, border-line, …); no page or component hard-codes a hex value.
+ *
+ * Palette: warm off-white canvas, white surfaces, ink text, one restrained blue
+ * accent, and three status colours. Each status colour has a `-ink` shade for
+ * text (darkened just enough to reach WCAG AA on white and on its own soft
+ * tint) and a `-soft` tint for backgrounds. Text-on-fill uses the base shade.
+ */
+@theme {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  --color-canvas: #f7f7f5;
+  --color-surface: #ffffff;
+  --color-sunken: #f1f1ee;
+  --color-hover: #f3f3f0;
+
+  --color-ink: #111827;
+  --color-muted: #55657a; /* #64748B darkened to clear 4.5:1 on canvas */
+  --color-faint: #64748b; /* icons / non-essential, never body text */
+
+  --color-line: #e5e7eb;
+  --color-line-strong: #d1d5db;
+
+  --color-accent: #315c8c;
+  --color-accent-strong: #264a72;
+  --color-accent-soft: #eaf0f7;
+
+  --color-success: #3f7d5a;
+  --color-success-ink: #2f6a49;
+  --color-success-soft: #e8f1ec;
+
+  --color-warn: #a87528;
+  --color-warn-ink: #855a17;
+  --color-warn-soft: #f6eedd;
+
+  --color-danger: #b84a4a;
+  --color-danger-ink: #a03e3e;
+  --color-danger-soft: #f7e8e8;
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  --shadow-sm: 0 1px 2px rgb(17 24 39 / 0.05);
+  --shadow-md: 0 4px 16px -2px rgb(17 24 39 / 0.10), 0 2px 4px rgb(17 24 39 / 0.04);
+  --shadow-lg: 0 16px 40px -8px rgb(17 24 39 / 0.18);
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: light;
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --sidebar-w: 15rem;
+  --sidebar-w-collapsed: 4rem;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  background: var(--color-canvas);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+}
+
+/* One consistent, visible keyboard focus treatment everywhere. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+}
+
+::selection {
+  background: var(--color-accent-soft);
+}
+
+/* Subtle page entrance — opacity + 4px lift, nothing bouncy. */
+@keyframes page-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+.page-in {
+  animation: page-in 200ms var(--ease-out) both;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes pop-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+.overlay-in { animation: fade-in 140ms ease-out both; }
+.popover-in { animation: pop-in 140ms var(--ease-out) both; }
+
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--color-sunken) 25%, var(--color-hover) 50%, var(--color-sunken) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+  border-radius: var(--radius-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

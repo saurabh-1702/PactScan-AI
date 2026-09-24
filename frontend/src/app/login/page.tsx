@@ -2,6 +2,10 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { Wordmark } from "@/components/shell/Sidebar";
+import { Button } from "@/components/ui/Button";
+import { Field, Input } from "@/components/ui/Field";
+import { Alert } from "@/components/ui/Feedback";
 import { login } from "@/lib/api";
 import { setToken } from "@/lib/auth";
 
@@ -22,52 +26,70 @@ export default function LoginPage() {
       router.replace("/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
-    } finally {
       setBusy(false);
     }
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-6">
-      <h1 className="text-2xl font-semibold tracking-tight">PactScan AI</h1>
-      <p className="mt-1 text-sm text-neutral-500">Sign in to continue.</p>
+    <main className="flex min-h-screen items-center justify-center px-4 py-10">
+      <div className="page-in w-full max-w-sm">
+        <Wordmark />
+        <h1 className="mt-8 text-xl font-semibold tracking-tight text-ink">Sign in</h1>
+        <p className="mt-1 text-[13px] text-muted">
+          Use your work account to review contracts and compliance findings.
+        </p>
 
-      <form onSubmit={onSubmit} className="mt-6 flex flex-col gap-3">
-        <input
-          type="email"
-          required
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="rounded border border-neutral-300 px-3 py-2 text-sm"
-        />
-        <input
-          type="password"
-          required
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="rounded border border-neutral-300 px-3 py-2 text-sm"
-        />
-        {error && (
-          <p className="rounded border border-red-400 bg-red-50 p-2 text-xs text-red-800">
-            {error}
+        <form onSubmit={onSubmit} className="mt-6 flex flex-col gap-4">
+          <Field label="Email">
+            {(p) => (
+              <Input
+                {...p}
+                type="email"
+                required
+                autoComplete="username"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            )}
+          </Field>
+          <Field label="Password">
+            {(p) => (
+              <Input
+                {...p}
+                type="password"
+                required
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            )}
+          </Field>
+          {error && <Alert tone="danger">{error}</Alert>}
+          <Button type="submit" variant="primary" loading={busy} className="mt-1 w-full">
+            {busy ? "Signing in" : "Sign in"}
+          </Button>
+        </form>
+
+        <div className="mt-8 rounded-lg border border-line bg-surface p-4 text-xs text-muted">
+          <p className="font-medium text-ink">Demo accounts</p>
+          <dl className="mt-2 space-y-1">
+            <div className="flex justify-between gap-3">
+              <dt>Legal User</dt>
+              <dd className="font-mono text-ink">enduser@demo.pactscan.ai</dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt>Reviewer</dt>
+              <dd className="font-mono text-ink">reviewer@demo.pactscan.ai</dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt>Administrator</dt>
+              <dd className="font-mono text-ink">admin@demo.pactscan.ai</dd>
+            </div>
+          </dl>
+          <p className="mt-2">
+            Password <span className="font-mono text-ink">PactScanDemo123!</span>
           </p>
-        )}
-        <button
-          type="submit"
-          disabled={busy}
-          className="rounded bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
-        >
-          {busy ? "Signing in…" : "Sign in"}
-        </button>
-      </form>
-
-      <div className="mt-6 rounded border border-neutral-200 bg-neutral-50 p-3 text-xs text-neutral-500">
-        <p className="font-semibold text-neutral-600">Demo accounts</p>
-        <p className="mt-1">enduser@demo.pactscan.ai — end_user</p>
-        <p>reviewer@demo.pactscan.ai — reviewer</p>
-        <p className="mt-1">Password: PactScanDemo123!</p>
+        </div>
       </div>
     </main>
   );

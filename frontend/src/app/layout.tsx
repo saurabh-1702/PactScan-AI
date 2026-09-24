@@ -1,35 +1,29 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
-import AppHeader from "@/components/AppHeader";
-import AuthGate from "@/components/AuthGate";
+import AppShell from "@/components/shell/AppShell";
+import { ProcessProvider } from "@/components/shell/Processes";
+import { TooltipProvider } from "@/components/ui/Overlay";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
 });
 
 export const metadata: Metadata = {
-  title: "PactScan AI",
-  description: "Agentic GraphRAG contract compliance for vendor DPAs",
+  title: "PactScan",
+  description: "Contract compliance for vendor data-processing agreements",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="h-screen flex flex-col">
-        <AuthGate>
-          <AppHeader />
-          {children}
-        </AuthGate>
+    <html lang="en" className={`${inter.variable} h-full antialiased`}>
+      <body className="h-screen">
+        <TooltipProvider>
+          <ProcessProvider>
+            <AppShell>{children}</AppShell>
+          </ProcessProvider>
+        </TooltipProvider>
       </body>
     </html>
   );

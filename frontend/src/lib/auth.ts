@@ -11,6 +11,15 @@
  */
 
 const TOKEN_KEY = "pactscan_token";
+export const AUTH_EVENT = "pactscan-auth";
+
+function notify(): void {
+  try {
+    queueMicrotask(() => window.dispatchEvent(new Event(AUTH_EVENT)));
+  } catch {
+    /* non-browser context */
+  }
+}
 
 export interface DecodedToken {
   sub: string;
@@ -33,6 +42,7 @@ export function setToken(token: string): void {
   } catch {
     /* private browsing / storage blocked — auth just won't persist */
   }
+  notify();
 }
 
 export function clearToken(): void {
@@ -41,6 +51,7 @@ export function clearToken(): void {
   } catch {
     /* ignore */
   }
+  notify();
 }
 
 export function decodeToken(token: string): DecodedToken | null {
