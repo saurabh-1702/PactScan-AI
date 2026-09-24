@@ -22,7 +22,7 @@ from app.agents.notifications.notify import notify_restore_decision
 from app.agents.restore.executor import RestoreNotAuthorizedError, apply_approved_restore
 from app.agents.restore.restore_agent import RestoreInputError, create_restore_request
 from app.api.deps import CurrentUser, get_current_user, require_role
-from app.db.models import DocumentVersion, RestoreRequest
+from app.db.models import DocumentVersion, RestoreRequest, User
 from app.db.postgres_client import get_db
 from app.models.restore import CreateRestoreRequest, DecideRestoreRequest, RestoreRequestOut
 
@@ -33,12 +33,14 @@ router = APIRouter(prefix="/api/restore-requests", tags=["restore"])
 
 def _to_out(request: RestoreRequest, db: Session) -> RestoreRequestOut:
     target = db.get(DocumentVersion, request.target_version_id)
+    requester = db.get(User, request.requested_by_user_id)
     return RestoreRequestOut(
         id=request.id,
         contract_id=request.contract_id,
         target_version_id=request.target_version_id,
         target_version_number=target.version_number if target else -1,
         requested_by_user_id=request.requested_by_user_id,
+        requested_by_email=requester.email if requester else None,
         reason=request.reason,
         status=request.status,
         reviewer_note=request.reviewer_note,

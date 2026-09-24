@@ -141,6 +141,8 @@ export interface Approval {
   edited_text: string | null;
   decided_at: string | null;
   created_at: string;
+  requested_by_user_id: string | null;
+  requested_by_email: string | null;
   finding_id: string | null;
   contract_id: string;
   clause_id: string;
@@ -374,6 +376,7 @@ export interface RestoreRequestInfo {
   target_version_id: string;
   target_version_number: number;
   requested_by_user_id: string;
+  requested_by_email: string | null;
   reason: string;
   status: "pending" | "approved" | "rejected";
   reviewer_note: string | null;

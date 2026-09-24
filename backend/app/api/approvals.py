@@ -30,7 +30,7 @@ from app.agents.fix_and_learn.executor import (
 from app.agents.fix_and_learn.playbook_feedback import record_accepted_redline
 from app.agents.notifications.notify import notify_approval_decision
 from app.api.deps import CurrentUser, get_current_user, require_role
-from app.db.models import Approval, AuditLog, RedlineSuggestion
+from app.db.models import Approval, AuditLog, RedlineSuggestion, User
 from app.db.postgres_client import get_db
 from app.models.approval import ApprovalOut, CreateApprovalRequest, DecideRequest
 
@@ -44,9 +44,16 @@ def get_store() -> GraphStore:
 
 
 def _to_out(
-    approval: Approval, suggestion: RedlineSuggestion, store: GraphStore, tenant_id: str
+    approval: Approval,
+    suggestion: RedlineSuggestion,
+    store: GraphStore,
+    tenant_id: str,
+    db: Session,
 ) -> ApprovalOut:
     clause = store.get_clause_by_id(suggestion.clause_id, tenant_id=tenant_id)
+    requester = (
+        db.get(User, suggestion.requested_by_user_id) if suggestion.requested_by_user_id else None
+    )
     return ApprovalOut(
         id=approval.id,
         redline_suggestion_id=approval.redline_suggestion_id,
@@ -55,6 +62,8 @@ def _to_out(
         edited_text=approval.edited_text,
         decided_at=approval.decided_at,
         created_at=approval.created_at,
+        requested_by_user_id=suggestion.requested_by_user_id,
+        requested_by_email=requester.email if requester else None,
         finding_id=suggestion.finding_id,
         contract_id=suggestion.contract_id,
         clause_id=suggestion.clause_id,
@@ -88,7 +97,7 @@ def create_approval(
     )
     db.commit()
     db.refresh(approval)
-    return _to_out(approval, suggestion, store, current_user.tenant_id)
+    return _to_out(approval, suggestion, store, current_user.tenant_id, db)
 
 
 @router.get("", response_model=list[ApprovalOut])
@@ -112,7 +121,7 @@ def list_approvals(
         suggestion = db.get(RedlineSuggestion, approval.redline_suggestion_id)
         if suggestion is None:
             continue  # orphaned row; shouldn't happen, skip defensively
-        out.append(_to_out(approval, suggestion, store, current_user.tenant_id))
+        out.append(_to_out(approval, suggestion, store, current_user.tenant_id, db))
     return out
 
 
@@ -164,7 +173,7 @@ def decide_approval(
             document_version_id=None,
             decided_by_user_id=current_user.user_id,
         )
-        return _to_out(approval, suggestion, store, current_user.tenant_id)
+        return _to_out(approval, suggestion, store, current_user.tenant_id, db)
 
     # approved -> call the Executor (and only the Executor, and only here)
     try:
@@ -197,4 +206,4 @@ def decide_approval(
     )
 
     db.refresh(approval)
-    return _to_out(approval, suggestion, store, current_user.tenant_id)
+    return _to_out(approval, suggestion, store, current_user.tenant_id, db)

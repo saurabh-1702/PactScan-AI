@@ -27,7 +27,11 @@ class ApprovalOut(BaseModel):
     reviewer_note: str | None
     edited_text: str | None
     decided_at: datetime | None
+    # created_at = when this draft entered the review queue (i.e. when the
+    # requester submitted it, once Phase 6b's preview-then-submit flow landed)
     created_at: datetime
+    requested_by_user_id: str | None = None
+    requested_by_email: str | None = None
 
     # denormalized fields from the associated redline_suggestions row, so the
     # frontend doesn't need a second round-trip per item

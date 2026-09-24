@@ -191,6 +191,13 @@ export default function ApprovalsPage() {
                         contract {a.contract_id} · confidence {a.confidence}
                       </span>
                     </div>
+                    <p className="mt-1 text-xs text-neutral-500">
+                      Requested by{" "}
+                      <span className="font-medium text-neutral-700">
+                        {a.requested_by_email ?? "unknown"}
+                      </span>{" "}
+                      · {new Date(a.created_at).toLocaleString()}
+                    </p>
 
                     <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <div className="rounded border border-red-300 bg-red-50 p-2">
@@ -350,7 +357,9 @@ export default function ApprovalsPage() {
                       </span>
                       <span className="font-medium">{a.clause_id}</span>
                       <span className="text-xs text-neutral-400">
-                        contract {a.contract_id} · decided{" "}
+                        contract {a.contract_id} · requested by{" "}
+                        {a.requested_by_email ?? "unknown"} on{" "}
+                        {new Date(a.created_at).toLocaleString()} · decided{" "}
                         {a.decided_at ? new Date(a.decided_at).toLocaleString() : "—"}
                       </span>
                       {a.status === "approved" && latest && (
@@ -399,7 +408,8 @@ export default function ApprovalsPage() {
                         Restore to v{r.target_version_number}
                       </span>
                       <span className="text-xs text-neutral-400">
-                        contract {r.contract_id} · requested{" "}
+                        contract {r.contract_id} · requested by{" "}
+                        {r.requested_by_email ?? "unknown"} on{" "}
                         {new Date(r.created_at).toLocaleString()}
                       </span>
                     </div>

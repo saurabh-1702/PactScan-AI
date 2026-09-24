@@ -25,6 +25,7 @@ class RestoreRequestOut(BaseModel):
     target_version_id: str
     target_version_number: int
     requested_by_user_id: str
+    requested_by_email: str | None = None
     reason: str
     status: str
     reviewer_note: str | None
