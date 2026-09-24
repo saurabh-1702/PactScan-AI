@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { getCurrentUser } from "@/lib/auth";
 import {
   getChatMessages,
   getChatSessions,
@@ -49,6 +50,12 @@ export default function AskPage() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [canDecide, setCanDecide] = useState(false);
+
+  useEffect(() => {
+    const role = getCurrentUser()?.role;
+    setCanDecide(role === "reviewer" || role === "admin");
+  }, []);
 
   async function loadSessions() {
     try {
@@ -198,14 +205,20 @@ export default function AskPage() {
                   </div>
                 )}
 
-                {m.responseType === "edit_draft" && (
-                  <Link
-                    href="/approvals"
-                    className="mt-2 block text-xs font-semibold text-emerald-700 underline"
-                  >
-                    → View this draft in the Approval Queue
-                  </Link>
-                )}
+                {m.responseType === "edit_draft" &&
+                  (canDecide ? (
+                    <Link
+                      href="/approvals"
+                      className="mt-2 block text-xs font-semibold text-emerald-700 underline"
+                    >
+                      → View this draft in the Approval Queue
+                    </Link>
+                  ) : (
+                    <p className="mt-2 text-xs text-neutral-500">
+                      A reviewer will review this draft. You&apos;ll get a notification (bell,
+                      top right) once it&apos;s been decided.
+                    </p>
+                  ))}
               </div>
             </div>
           ))}
