@@ -8,11 +8,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from typing import Literal
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 
 from app.agents.detect.graph_store import GraphStore, get_graph_store
+from app.agents.fix_and_learn.clean_copy import make_clean_docx
 from app.api.access import ensure_contract_access
 from app.api.deps import CurrentUser, get_current_user
 from app.db.models import DocumentVersion
@@ -49,6 +52,10 @@ def list_versions(
 @router.get("/version/{version_id}/download")
 def download_version(
     version_id: str,
+    format: Literal["redline", "clean"] = Query(
+        default="redline",
+        description="redline = changes marked (strike-through / underline); clean = changes accepted",
+    ),
     db: Session = Depends(get_db),
     store: GraphStore = Depends(get_store),
     current_user: CurrentUser = Depends(get_current_user),
@@ -61,8 +68,18 @@ def download_version(
     path = Path(row.file_path)
     if not path.exists():
         raise HTTPException(404, f"file for version {version_id!r} is missing on disk")
+    media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    if format == "clean":
+        # generated on the fly from the stored version — nothing new is stored
+        return Response(
+            content=make_clean_docx(path.read_bytes()),
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{row.contract_id}_v{row.version_number}_clean.docx"'
+            },
+        )
     return FileResponse(
         path,
         filename=f"{row.contract_id}_v{row.version_number}.docx",
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        media_type=media_type,
     )

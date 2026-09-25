@@ -134,6 +134,42 @@ export async function getContracts(): Promise<ContractSummary[]> {
   return handleJson<ContractSummary[]>(res);
 }
 
+export interface ScanInfo {
+  latest_version: number;
+  scanned_version: number;
+  /** the current wording differs from the version the findings describe */
+  stale: boolean;
+  running: boolean;
+  /** a re-scan started, replaced the analysis, and did not finish */
+  incomplete: boolean;
+  last_rescan_at: string | null;
+  blockers: { pending_approvals: number; pending_restores: number; unsubmitted_drafts: number };
+  can_rescan: boolean;
+}
+
+export async function getScanInfo(contractId: string): Promise<ScanInfo> {
+  const res = await authFetch(`/api/contracts/${contractId}/scan-info`);
+  return handleJson<ScanInfo>(res);
+}
+
+export interface RescanResult {
+  contract_id: string;
+  scanned_version: number;
+  findings_before: number;
+  findings_after: number;
+}
+
+/** Re-reads the contract's CURRENT version (changes accepted) and refreshes its
+ * findings. Slow — poll getJobProgress(jobId) for the real stages. */
+export async function postRescan(contractId: string, jobId: string): Promise<RescanResult> {
+  const res = await authFetch(`/api/contracts/${contractId}/rescan`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ job_id: jobId }),
+  });
+  return handleJson<RescanResult>(res);
+}
+
 // --- Real job progress -----------------------------------------------------
 
 export type StageStatus = "pending" | "active" | "done" | "failed";
@@ -281,8 +317,9 @@ export async function getDocumentVersions(contractId: string): Promise<DocumentV
 export async function downloadDocumentVersion(
   versionId: string,
   filename: string,
+  format: "clean" | "redline" = "redline",
 ): Promise<void> {
-  const res = await authFetch(`/api/documents/version/${versionId}/download`);
+  const res = await authFetch(`/api/documents/version/${versionId}/download?format=${format}`);
   if (!res.ok) throw new Error(`Download failed (${res.status})`);
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);

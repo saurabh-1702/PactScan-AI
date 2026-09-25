@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { Download, FileEdit, Search, Trash2 } from "lucide-react";
+import { FileEdit, Search, Trash2 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
 import DiffText, { DiffLegend } from "@/components/DiffText";
+import DownloadMenu, { type DownloadFormat } from "@/components/DownloadMenu";
 import DraftSubmitPanel from "@/components/DraftSubmitPanel";
 import TextPanel, { PlainText } from "@/components/TextPanel";
 import { Button } from "@/components/ui/Button";
@@ -70,12 +71,9 @@ function DraftsView() {
   );
   const open = drafts.data?.find((d) => d.suggestion_id === openId) ?? null;
 
-  async function onDownload(d: DraftInfo) {
-    try {
-      await downloadDocumentVersion(d.document_version_id!, `${d.filename ?? d.contract_id}_updated.docx`);
-    } catch (err) {
-      toast.error(`Download failed: ${err instanceof Error ? err.message : "unknown error"}`);
-    }
+  function downloadDraftVersion(d: DraftInfo, format: DownloadFormat) {
+    const base = (d.filename ?? d.contract_id).replace(/\.[^.]+$/, "");
+    return downloadDocumentVersion(d.document_version_id!, `${base}_updated_${format}.docx`, format);
   }
 
   return (
@@ -177,7 +175,7 @@ function DraftsView() {
             unsubmittedForContract={
               (drafts.data ?? []).filter((x) => x.contract_id === open.contract_id && x.status === "draft").length
             }
-            onDownload={() => onDownload(open)}
+            onDownload={(format) => downloadDraftVersion(open, format)}
             onSubmitted={drafts.reload}
             onDeleted={(message) => {
               toast.success(message);
@@ -200,7 +198,7 @@ function DraftDetail({
 }: {
   d: DraftInfo;
   unsubmittedForContract: number;
-  onDownload: () => void;
+  onDownload: (format: DownloadFormat) => Promise<void>;
   onSubmitted: () => void;
   onDeleted: (message: string) => void;
 }) {
@@ -308,9 +306,7 @@ function DraftDetail({
 
       <div className="flex flex-wrap items-center gap-2 border-t border-line pt-4">
         {d.status === "approved" && d.document_version_id && (
-          <Button variant="primary" size="sm" onClick={onDownload}>
-            <Download className="h-3.5 w-3.5" aria-hidden /> Download updated document
-          </Button>
+          <DownloadMenu variant="primary" label="Download updated document" onDownload={onDownload} />
         )}
         <Link
           href={`/contracts/${d.contract_id}`}

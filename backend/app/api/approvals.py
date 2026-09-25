@@ -70,7 +70,9 @@ def _to_out(
         finding_id=suggestion.finding_id,
         contract_id=suggestion.contract_id,
         clause_id=suggestion.clause_id,
-        original_clause_text=clause.raw_text if clause else "(clause not found in graph)",
+        original_clause_text=(
+            clause.raw_text if clause else (suggestion.original_clause_text or "(this clause is no longer in the current scan)")
+        ),
         proposed_text=suggestion.submitted_text,
         ai_draft_text=suggestion.proposed_text,
         requester_edited_text=suggestion.requester_edited_text,

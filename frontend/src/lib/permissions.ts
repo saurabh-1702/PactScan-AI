@@ -11,6 +11,7 @@ export type Role = "end_user" | "reviewer" | "admin";
 
 export type Permission =
   | "contracts.upload" // run Detect / attach a file in Ask
+  | "contracts.rescan" // re-scan a contract's current version
   | "drafts.create" // draft + submit a redline
   | "approvals.review" // see the approval queue, approve / edit / reject
   | "restore.request" // ask for an older version to be restored
@@ -20,9 +21,10 @@ export type Permission =
   | "portfolio.viewAll"; // see every contract in the tenant, not just own
 
 const GRANTS: Record<Role, readonly Permission[]> = {
-  end_user: ["contracts.upload", "drafts.create", "restore.request", "horizon.view"],
+  end_user: ["contracts.upload", "contracts.rescan", "drafts.create", "restore.request", "horizon.view"],
   reviewer: [
     "contracts.upload",
+    "contracts.rescan",
     "drafts.create",
     "approvals.review",
     "restore.request",
@@ -32,6 +34,7 @@ const GRANTS: Record<Role, readonly Permission[]> = {
   ],
   admin: [
     "contracts.upload",
+    "contracts.rescan",
     "drafts.create",
     "approvals.review",
     "restore.request",

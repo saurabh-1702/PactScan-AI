@@ -135,3 +135,7 @@ Three observations the user made on their own before following the test plan, al
 ### Found by the user asking "why?"
 
 Asked what Horizon-Scanning's "0 contracts newly flagged · re-running is idempotent" result required, the user prompted a re-read of the code that showed it wasn't idempotent through the real API (fixed). Asked why Restore would need a re-scan, the user correctly pointed out that restoring the original version already matches the findings — which turned a proposed "re-scan" feature into a small honesty fix (clear wording, correct labels) instead of a risky one.
+
+### The user's own end-to-end scenario
+
+*"Upload contract A, detect and fix it; bring a Horizon-Scanning amendment that makes the fixed contract problematic again; re-fix it; re-check the re-fixed document through Detect to get a finally clean document."* — walked through step by step, this exposed that Horizon-Scanning and Detect could never see an edited document, and that the downloadable copy was a redline, not a clean contract. The user asked for **both** kinds of download ("clean copy and strikethrough copy") and for the re-scan to be built. Full design and safeguards: SETUP_NOTES ("Clean copy and re-scan").

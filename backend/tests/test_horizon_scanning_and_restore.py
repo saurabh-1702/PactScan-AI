@@ -186,6 +186,56 @@ async def test_submitting_the_identical_update_twice_is_one_update_not_two(
     assert len(amendments) == 1
 
 
+@pytest.mark.asyncio
+async def test_rediff_can_be_limited_to_one_contract_and_run_without_notifying(
+    hzs_store, wire_horizon_fakes, db_session
+):
+    """What a re-scan relies on: re-check ONE contract against an update, quietly."""
+    clause = add_regulation_update(
+        hzs_store, "DPDP Act 2023 (India)", "New mandatory child-consent requirement.", "2026-01-01"
+    )
+
+    # limited to a contract the update doesn't touch: nothing is flagged
+    none = await rediff_regulation_update(
+        hzs_store, db_session, clause, tenant_id=DEMO_TENANT, only_contract_id=CT_CLEAN, notify=False
+    )
+    assert none["findings_created"] == 0
+
+    # limited to the affected contract, quietly: flagged, but no notification
+    quiet = await rediff_regulation_update(
+        hzs_store, db_session, clause, tenant_id=DEMO_TENANT, only_contract_id=CT_AFFECTED, notify=False
+    )
+    assert quiet["findings_created"] == 1
+    assert db_session.query(Notification).count() == 0
+
+    # the same call with notifications on (the normal Horizon path) would have notified
+    other = add_regulation_update(hzs_store, "GDPR", "Another child-consent requirement.", "2026-02-01")
+    await rediff_regulation_update(hzs_store, db_session, other, tenant_id=DEMO_TENANT)
+    assert db_session.query(Notification).count() == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("label", ["NEUTRAL", "ENTAILS"])
+async def test_only_a_real_contradiction_is_flagged_not_a_neutral_or_compliant_clause(
+    hzs_store, wire_horizon_fakes, db_session, monkeypatch, label
+):
+    """Regression: NEUTRAL ("this clause doesn't deal with the subject") used to
+    become a finding too, flooding contracts with topically-nearby clauses."""
+    from app.models.clause import ConfidenceLevel, NLILabel, NLIResult
+
+    async def _classify(prompt, schema, system_prompt=None):
+        return NLIResult(
+            label=NLILabel[label], explanation="not a problem", confidence=ConfidenceLevel.high
+        )
+
+    monkeypatch.setattr("app.llm.client.generate_structured", _classify)
+    clause = add_regulation_update(hzs_store, "DPDP Act 2023 (India)", "A new requirement.", "2026-01-01")
+    summary = await rediff_regulation_update(hzs_store, db_session, clause, tenant_id=DEMO_TENANT)
+
+    assert summary["findings_created"] == 0 and summary["contracts_flagged"] == 0
+    assert [f.finding_id for f in hzs_store.get_findings(CT_AFFECTED)] == ["fnd_preexisting"]
+
+
 def test_a_different_update_is_a_different_update(hzs_store):
     base = ("DPDP Act 2023 (India)", "New mandatory child-consent requirement.", "2026-01-01")
     a = add_regulation_update(hzs_store, *base)

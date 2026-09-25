@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, CheckCircle2, Download, History } from "lucide-react";
+import { ArrowLeft, CheckCircle2, History, RefreshCw } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useMemo, useState } from "react";
+import DownloadMenu from "@/components/DownloadMenu";
 import FindingCard from "@/components/FindingCard";
 import { Button } from "@/components/ui/Button";
 import { Dialog } from "@/components/ui/Dialog";
@@ -12,6 +13,7 @@ import { Field, Textarea } from "@/components/ui/Field";
 import { Page } from "@/components/ui/Layout";
 import { SEVERITY_ORDER } from "@/components/ui/Severity";
 import { Tab, TabList, TabPanel, Tabs } from "@/components/ui/Tabs";
+import { StageProgress } from "@/components/ui/StageProgress";
 import { Table, Td, Th, THead, Tr } from "@/components/ui/Table";
 import { useToast } from "@/components/ui/Toast";
 import {
@@ -19,10 +21,14 @@ import {
   downloadDocumentVersion,
   getDetectReport,
   getDocumentVersions,
+  getScanInfo,
+  newJobId,
+  postRescan,
   type DocumentVersionInfo,
+  type ScanInfo,
 } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
-import { useLoad } from "@/lib/hooks";
+import { useJobProgress, useLoad } from "@/lib/hooks";
 import { useSession } from "@/lib/session";
 
 /** Where a version came from. Only v1 is the original upload: an approved edit
@@ -41,6 +47,7 @@ export default function ContractDetailPage() {
 
   const report = useLoad(() => getDetectReport(contractId), contractId);
   const versions = useLoad(() => getDocumentVersions(contractId), contractId);
+  const scan = useLoad(() => getScanInfo(contractId), contractId);
 
   const [restoreTarget, setRestoreTarget] = useState<DocumentVersionInfo | null>(null);
   const [reason, setReason] = useState("");
@@ -55,12 +62,10 @@ export default function ContractDetailPage() {
   );
   const latest = versions.data?.length ? Math.max(...versions.data.map((v) => v.version_number)) : null;
 
-  async function onDownload(v: DocumentVersionInfo) {
-    try {
-      await downloadDocumentVersion(v.id, `${report.data?.filename ?? contractId}_v${v.version_number}.docx`);
-    } catch (err) {
-      toast.error(`Download failed: ${err instanceof Error ? err.message : "unknown error"}`);
-    }
+  const baseName = (report.data?.filename ?? contractId).replace(/\.[^.]+$/, "");
+
+  function downloadVersion(v: DocumentVersionInfo, format: "clean" | "redline") {
+    return downloadDocumentVersion(v.id, `${baseName}_v${v.version_number}_${format}.docx`, format);
   }
 
   async function onRequestRestore() {
@@ -75,6 +80,32 @@ export default function ContractDetailPage() {
       toast.error(err instanceof Error ? err.message : "Could not submit the request");
     } finally {
       setBusy(false);
+    }
+  }
+
+  const [rescanOpen, setRescanOpen] = useState(false);
+  const [rescanJob, setRescanJob] = useState<string | null>(null);
+  const [rescanError, setRescanError] = useState<string | null>(null);
+  const rescanning = rescanJob !== null;
+  const rescanProgress = useJobProgress(rescanJob);
+
+  async function onRescan() {
+    const jobId = newJobId();
+    setRescanJob(jobId);
+    setRescanError(null);
+    try {
+      const r = await postRescan(contractId, jobId);
+      toast.success(
+        `Re-scan complete — ${r.findings_after} finding${r.findings_after === 1 ? "" : "s"} (was ${r.findings_before}).`,
+      );
+      setRescanOpen(false);
+    } catch (err) {
+      setRescanError(err instanceof Error ? err.message : "The re-scan failed");
+    } finally {
+      setRescanJob(null);
+      report.reload();
+      versions.reload();
+      scan.reload();
     }
   }
 
@@ -133,13 +164,14 @@ export default function ContractDetailPage() {
               </Alert>
             ) : (
               <>
-                {(versions.data?.length ?? 0) > 1 && (
-                  <p className="mb-3 text-xs text-muted">
-                    Findings come from the original upload. Approved edits and restores made since are
-                    not re-scanned, so a finding marked “fix approved” means a reviewer approved a
-                    change — not that the new wording was re-checked.
-                  </p>
-                )}
+                <ScanStatus
+                  scan={scan.data}
+                  canRescan={can("contracts.rescan")}
+                  onRescan={() => {
+                    setRescanError(null);
+                    setRescanOpen(true);
+                  }}
+                />
                 <ul className="space-y-3">
                   {findings.map((f) => (
                     <FindingCard key={f.finding_id} finding={f} />
@@ -187,9 +219,7 @@ export default function ContractDetailPage() {
                         <Td muted>{versionOrigin(v)}</Td>
                         <Td align="right">
                           <span className="inline-flex gap-2">
-                            <Button size="sm" onClick={() => onDownload(v)}>
-                              <Download className="h-3.5 w-3.5" aria-hidden /> Download
-                            </Button>
+                            <DownloadMenu onDownload={(format) => downloadVersion(v, format)} />
                             {v.version_number !== latest && can("restore.request") && (
                               <Button size="sm" onClick={() => setRestoreTarget(v)}>
                                 Request restore
@@ -245,6 +275,120 @@ export default function ContractDetailPage() {
           )}
         </Field>
       </Dialog>
+      <Dialog
+        open={rescanOpen}
+        onOpenChange={(o) => {
+          if (!rescanning) setRescanOpen(o);
+        }}
+        title="Re-scan the latest version"
+        description="Read the current wording again and refresh this contract's findings."
+        footer={
+          <>
+            <Button onClick={() => setRescanOpen(false)} disabled={rescanning}>
+              Cancel
+            </Button>
+            <Button variant="primary" loading={rescanning} onClick={onRescan}>
+              <RefreshCw className="h-3.5 w-3.5" aria-hidden /> Re-scan
+            </Button>
+          </>
+        }
+      >
+        {rescanning ? (
+          rescanProgress ? (
+            <StageProgress stages={rescanProgress.stages} />
+          ) : (
+            <p className="text-[13px] text-muted">Starting…</p>
+          )
+        ) : (
+          <div className="space-y-3 text-[13px] text-muted">
+            <ul className="list-disc space-y-1.5 pl-5">
+              <li>
+                It reads the <span className="font-medium text-ink">clean copy</span> of the latest
+                version — every approved change accepted.
+              </li>
+              <li>
+                Findings are replaced with what the current wording actually produces, and it is
+                re-checked against every regulation update recorded so far.
+              </li>
+              <li>
+                Page numbers on findings may differ from the original PDF, because it re-reads the
+                Word version.
+              </li>
+              <li>No notifications or emails are sent, and no new version is created.</li>
+              <li>
+                Your past drafts and decisions stay in My Drafts and Approvals, with the wording they
+                were written against.
+              </li>
+            </ul>
+            {rescanError && <Alert tone="danger">{rescanError}</Alert>}
+          </div>
+        )}
+      </Dialog>
     </Page>
   );
+}
+
+function ScanStatus({
+  scan,
+  canRescan,
+  onRescan,
+}: {
+  scan: ScanInfo | null;
+  canRescan: boolean;
+  onRescan: () => void;
+}) {
+  if (!scan) return null;
+
+  const blockers = [
+    scan.blockers.pending_approvals > 0 && `${scan.blockers.pending_approvals} draft(s) waiting for a reviewer`,
+    scan.blockers.pending_restores > 0 && `${scan.blockers.pending_restores} restore request(s) waiting`,
+    scan.blockers.unsubmitted_drafts > 0 && `${scan.blockers.unsubmitted_drafts} draft(s) not yet submitted`,
+  ].filter(Boolean);
+
+  const action = canRescan && (
+    <div className="mt-2.5">
+      <Button size="sm" variant="secondary" disabled={!scan.can_rescan} onClick={onRescan}>
+        <RefreshCw className="h-3.5 w-3.5" aria-hidden /> Re-scan latest version
+      </Button>
+      {!scan.can_rescan && !scan.running && blockers.length > 0 && (
+        <p className="mt-1.5 text-xs">
+          Not available while there are {blockers.join(", ")}. Decide, submit or delete them first.
+        </p>
+      )}
+    </div>
+  );
+
+  if (scan.running) {
+    return (
+      <Alert tone="info" className="mb-4" title="A re-scan is running">
+        The findings below will refresh when it finishes.
+      </Alert>
+    );
+  }
+  if (scan.incomplete) {
+    return (
+      <Alert tone="warn" className="mb-4" title="The last re-scan didn't finish">
+        Some findings may be missing. Run it again to rebuild them.
+        {action}
+      </Alert>
+    );
+  }
+  if (scan.stale) {
+    return (
+      <Alert tone="info" className="mb-4" title={`These findings describe v${scan.scanned_version}`}>
+        The current version is v{scan.latest_version}. Its wording has changed since, and it has not been
+        re-checked, so a finding may already be resolved — or a new one may be missing.
+        {action}
+      </Alert>
+    );
+  }
+  if (scan.latest_version > 1) {
+    return (
+      <p className="mb-3 text-xs text-muted">
+        These findings describe the current wording
+        {scan.last_rescan_at ? ` (re-scanned ${formatDateTime(scan.last_rescan_at)})` : " (v1)"}.
+      </p>
+    );
+  }
+  return null;
 }

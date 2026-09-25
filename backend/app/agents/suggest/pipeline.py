@@ -179,6 +179,7 @@ async def _run_pipeline(
         finding_id=finding_id,
         contract_id=clause.contract_id,
         clause_id=clause.clause_id,
+        original_clause_text=clause.raw_text,
         proposed_text=redline.proposed_clause_text,
         rationale=redline.rationale,
         confidence=final_confidence,

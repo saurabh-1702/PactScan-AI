@@ -38,6 +38,10 @@ class RedlineSuggestion(Base):
     finding_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     contract_id: Mapped[str] = mapped_column(String(40), index=True)
     clause_id: Mapped[str] = mapped_column(String(40), index=True)
+    # The clause's wording when this draft was made. A re-scan replaces a
+    # contract's clauses (new ids), so without this a draft's history would lose
+    # the text it was written against. Nullable: older drafts have none.
+    original_clause_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     # The AI's drafted text — never overwritten.
     proposed_text: Mapped[str] = mapped_column(Text)
     # Set only if the requester edited the AI draft before submitting it for

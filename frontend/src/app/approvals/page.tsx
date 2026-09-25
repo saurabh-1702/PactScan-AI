@@ -1,9 +1,10 @@
 "use client";
 
-import { AlertTriangle, CheckSquare, Download } from "lucide-react";
+import { AlertTriangle, CheckSquare } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
 import DiffText, { DiffLegend } from "@/components/DiffText";
+import DownloadMenu, { type DownloadFormat } from "@/components/DownloadMenu";
 import TextPanel, { PlainText } from "@/components/TextPanel";
 import { Button } from "@/components/ui/Button";
 import { Dialog } from "@/components/ui/Dialog";
@@ -112,15 +113,12 @@ function ApprovalsView() {
     router.replace(next === "edits" ? "/approvals" : `/approvals?tab=${next}`);
   }
 
-  async function downloadLatest(contractId: string) {
-    try {
-      const versions = await getDocumentVersions(contractId);
-      const latest = versions[versions.length - 1];
-      if (!latest) throw new Error("no version on file");
-      await downloadDocumentVersion(latest.id, `${nameOf(contractId)}_v${latest.version_number}.docx`);
-    } catch (err) {
-      toast.error(`Download failed: ${err instanceof Error ? err.message : "unknown error"}`);
-    }
+  async function downloadLatest(contractId: string, format: DownloadFormat) {
+    const versions = await getDocumentVersions(contractId);
+    const latest = versions[versions.length - 1];
+    if (!latest) throw new Error("no version on file");
+    const base = nameOf(contractId).replace(/\.[^.]+$/, "");
+    await downloadDocumentVersion(latest.id, `${base}_v${latest.version_number}_${format}.docx`, format);
   }
 
   function afterDecision(message: string) {
@@ -270,9 +268,7 @@ function ApprovalsView() {
                     </Td>
                     <Td align="right">
                       {h.status === "approved" && (
-                        <Button size="sm" onClick={() => downloadLatest(h.contractId)}>
-                          <Download className="h-3.5 w-3.5" aria-hidden /> Latest
-                        </Button>
+                        <DownloadMenu label="Latest" onDownload={(format) => downloadLatest(h.contractId, format)} />
                       )}
                     </Td>
                   </Tr>

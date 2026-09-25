@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import BaseModel
 
 
@@ -24,3 +26,33 @@ class MeOut(BaseModel):
     role: str
     tenant_id: str
     tenant_name: str
+
+
+class RescanBlockers(BaseModel):
+    pending_approvals: int = 0
+    pending_restores: int = 0
+    unsubmitted_drafts: int = 0
+
+
+class ScanInfo(BaseModel):
+    latest_version: int
+    scanned_version: int
+    # True when the current wording differs from the version the findings describe
+    stale: bool
+    running: bool
+    # a re-scan started but did not finish after replacing the analysis
+    incomplete: bool
+    last_rescan_at: datetime | None = None
+    blockers: RescanBlockers
+    can_rescan: bool
+
+
+class RescanRequest(BaseModel):
+    job_id: str | None = None
+
+
+class RescanResult(BaseModel):
+    contract_id: str
+    scanned_version: int
+    findings_before: int
+    findings_after: int

@@ -4,7 +4,7 @@ Given a newly-added RegulationClause, finds every existing Clause across
 every contract already in the system that's topically related (reusing
 Phase 2's portfolio-wide vector similarity search), runs the same
 NLI-style compliance check Phase 1's Detect Agent uses, and turns any
-CONTRADICTS or mandatory-gap NEUTRAL result into a Finding via the exact
+CONTRADICTS result into a Finding via the exact
 same finding-creation helper Detect uses (``build_finding_from_nli``) —
 so a Horizon-Scanning finding and a Detect finding are structurally
 indistinguishable in storage. Each newly-created finding fires Phase 5's
@@ -63,8 +63,14 @@ async def rediff_regulation_update(
     db: Session,
     new_clause: dict,
     tenant_id: str = DEMO_TENANT,
+    only_contract_id: str | None = None,
+    notify: bool = True,
 ) -> dict:
-    """Returns a summary: {contracts_flagged, findings_created, details:
+    """``only_contract_id`` limits the check to one contract (a re-scan re-checks
+    just that contract against every recorded update); ``notify=False`` skips the
+    new-finding notifications (a re-scan's findings are not new news).
+
+    Returns a summary: {contracts_flagged, findings_created, details:
     [{contract_id, filename, new_finding_ids}]}."""
     # Detect never embeds a contract's clauses itself — embedding is lazy,
     # only ever triggered by Suggest/Ask so far. A contract Detect-scanned
@@ -75,7 +81,10 @@ async def rediff_regulation_update(
     await backfill_all(store, tenant_id=tenant_id)
     embedding = await llm.generate_embedding(new_clause["text"])
     hits = store.vector_search_similar_clauses(
-        embedding, tenant_id=tenant_id, top_k=settings.horizon_scan_top_k, contract_id=None
+        embedding,
+        tenant_id=tenant_id,
+        top_k=settings.horizon_scan_top_k,
+        contract_id=only_contract_id,
     )
     relevant = [h for h in hits if h["similarity"] >= settings.horizon_scan_similarity_threshold]
 
@@ -88,8 +97,12 @@ async def rediff_regulation_update(
         if clause is None:
             continue  # stale hit; clause was removed since the index was built
         nli = await _classify_single(clause.raw_text, new_clause["text"])
-        if nli.label == NLILabel.ENTAILS:
-            continue  # already compliant with the new requirement — no finding
+        if nli.label != NLILabel.CONTRADICTS:
+            # ENTAILS = already compliant; NEUTRAL = the clause simply doesn't deal
+            # with this requirement's subject. Neither is a compliance problem — only
+            # a clause that itself creates one is flagged. (Flagging NEUTRAL flooded
+            # contracts with findings on clauses that were merely topically nearby.)
+            continue
         finding = build_finding_from_nli(
             contract_id=clause.contract_id,
             clause=clause,
@@ -111,13 +124,14 @@ async def rediff_regulation_update(
         if not new:
             continue  # this simulated update was already re-diffed against this contract
         filename = filenames.get(contract_id, contract_id)
-        notify_new_findings(
-            db,
-            tenant_id,
-            filename,
-            new,
-            contract_owner_user_id=contracts.get(contract_id, {}).get("uploaded_by_user_id"),
-        )
+        if notify:
+            notify_new_findings(
+                db,
+                tenant_id,
+                filename,
+                new,
+                contract_owner_user_id=contracts.get(contract_id, {}).get("uploaded_by_user_id"),
+            )
         total_new += len(new)
         details.append(
             {

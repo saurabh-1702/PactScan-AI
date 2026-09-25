@@ -1,7 +1,8 @@
 "use client";
 
-import { Bell, Download } from "lucide-react";
+import { Bell } from "lucide-react";
 import { useMemo, useState } from "react";
+import DownloadMenu, { type DownloadFormat } from "@/components/DownloadMenu";
 import { Button } from "@/components/ui/Button";
 import { Alert, EmptyState, Skeleton } from "@/components/ui/Feedback";
 import { Page, PageHeader } from "@/components/ui/Layout";
@@ -30,7 +31,7 @@ function NotificationList({
   onMarkRead,
 }: {
   rows: NotificationInfo[];
-  onDownload: (versionId: string) => void;
+  onDownload: (versionId: string, format: DownloadFormat) => Promise<void>;
   onMarkRead: (n: NotificationInfo) => void;
 }) {
   if (rows.length === 0) {
@@ -56,9 +57,7 @@ function NotificationList({
           </div>
           <div className="flex shrink-0 items-center gap-2">
             {n.document_version_id && (
-              <Button size="sm" onClick={() => onDownload(n.document_version_id!)}>
-                <Download className="h-3.5 w-3.5" aria-hidden /> Download
-              </Button>
+              <DownloadMenu onDownload={(format) => onDownload(n.document_version_id!, format)} />
             )}
             {!n.is_read && (
               <Button size="sm" variant="ghost" onClick={() => onMarkRead(n)}>
@@ -98,12 +97,8 @@ export default function NotificationsPage() {
     setReadIds((prev) => new Set([...prev, ...unread.map((n) => n.id)]));
   }
 
-  async function download(id: string) {
-    try {
-      await downloadDocumentVersion(id, `${id}.docx`);
-    } catch (err) {
-      toast.error(`Download failed: ${err instanceof Error ? err.message : "unknown error"}`);
-    }
+  function download(id: string, format: DownloadFormat) {
+    return downloadDocumentVersion(id, `PactScan_document_${format}.docx`, format);
   }
 
   return (

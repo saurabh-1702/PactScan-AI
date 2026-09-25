@@ -60,9 +60,9 @@ export default function NotificationsMenu() {
     }
   }
 
-  async function download(versionId: string) {
+  async function download(versionId: string, format: "clean" | "redline") {
     try {
-      await downloadDocumentVersion(versionId, `${versionId}.docx`);
+      await downloadDocumentVersion(versionId, `PactScan_document_${format}.docx`, format);
     } catch {
       /* non-fatal — the file remains reachable from the contract page */
     }
@@ -120,14 +120,26 @@ export default function NotificationsMenu() {
                   <div className="mt-1.5 flex items-center gap-3">
                     <span className="text-xs text-muted">{timeAgo(n.created_at)}</span>
                     {n.document_version_id && (
-                      <button
-                        type="button"
-                        onClick={() => download(n.document_version_id!)}
-                        className="inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline"
-                      >
-                        <Download className="h-3 w-3" aria-hidden />
-                        Download
-                      </button>
+                      <span className="inline-flex items-center gap-1.5 text-xs">
+                        <Download className="h-3 w-3 text-faint" aria-hidden />
+                        <button
+                          type="button"
+                          onClick={() => download(n.document_version_id!, "clean")}
+                          className="font-medium text-accent hover:underline"
+                        >
+                          Clean
+                        </button>
+                        <span className="text-faint" aria-hidden>
+                          ·
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => download(n.document_version_id!, "redline")}
+                          className="font-medium text-accent hover:underline"
+                        >
+                          Redline
+                        </button>
+                      </span>
                     )}
                     {!n.is_read && (
                       <button

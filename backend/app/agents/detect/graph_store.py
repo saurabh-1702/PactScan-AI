@@ -193,6 +193,12 @@ class GraphStore(abc.ABC):
     @abc.abstractmethod
     def wipe_contract(self, contract_id: str, tenant_id: str = DEMO_TENANT) -> None: ...
 
+    @abc.abstractmethod
+    def reset_contract_analysis(self, contract_id: str, tenant_id: str = DEMO_TENANT) -> None:
+        """Remove a contract's clauses, overrides, findings and detect-run marker
+        but KEEP the Contract node itself (its owner and upload date). Used by a
+        re-scan, which is about to write a fresh analysis of the same contract."""
+
     # --- Suggest agent support (Phase 2) --------------------------
     @abc.abstractmethod
     def get_clause_by_id(
@@ -553,6 +559,9 @@ class InMemoryGraphStore(GraphStore):
 
     def wipe_contract(self, contract_id, tenant_id=DEMO_TENANT):
         self.contracts.pop((tenant_id, contract_id), None)
+        self.reset_contract_analysis(contract_id, tenant_id)
+
+    def reset_contract_analysis(self, contract_id, tenant_id=DEMO_TENANT):
         self.findings.pop((tenant_id, contract_id), None)
         self.compliance_edges.pop((tenant_id, contract_id), None)
         self.detect_runs.pop((tenant_id, contract_id), None)
@@ -915,6 +924,22 @@ class Neo4jGraphStore(GraphStore):
         )
 
     # --- Suggest agent support (Phase 2) --------------------------
+    def reset_contract_analysis(self, contract_id, tenant_id=DEMO_TENANT):
+        self._run(
+            """
+            MATCH (c:Contract {id: $contract_id, tenant_id: $tenant_id})
+            OPTIONAL MATCH (c)-[:HAS_FINDING]->(f:Finding)
+            WITH c, collect(f) AS findings
+            OPTIONAL MATCH (cl:Clause {contract_id: $contract_id, tenant_id: $tenant_id})
+            WITH c, findings, collect(cl) AS clauses
+            FOREACH (x IN findings | DETACH DELETE x)
+            FOREACH (x IN clauses | DETACH DELETE x)
+            REMOVE c.detect_completed_at
+            """,
+            contract_id=contract_id,
+            tenant_id=tenant_id,
+        )
+
     def get_clause_by_id(self, clause_id, tenant_id=DEMO_TENANT):
         rows = self._run(
             """

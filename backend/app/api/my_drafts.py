@@ -56,7 +56,9 @@ def _build(db: Session, store: GraphStore, sg: RedlineSuggestion, filenames: dic
         filename=filenames.get(sg.contract_id),
         clause_id=sg.clause_id,
         finding_id=sg.finding_id,
-        original_clause_text=clause.raw_text if clause else "(clause not found in graph)",
+        original_clause_text=(
+            clause.raw_text if clause else (sg.original_clause_text or "(this clause is no longer in the current scan)")
+        ),
         ai_draft_text=sg.proposed_text,
         requester_edited_text=sg.requester_edited_text,
         rationale=sg.rationale,
@@ -125,6 +127,12 @@ def submit_draft(
 ) -> DraftOut:
     sg = _own_suggestion(db, suggestion_id, current_user)
     ensure_contract_access(store, current_user, sg.contract_id)
+    if store.get_clause_by_id(sg.clause_id, tenant_id=sg.tenant_id) is None:
+        raise HTTPException(
+            409,
+            "This contract was re-scanned after the draft was made, so the clause it "
+            "targets no longer exists. Draft a fresh fix from the current findings.",
+        )
     try:
         enqueue_for_review(db, sg, body.edited_text, source="requester_submit")
     except SubmissionError as exc:

@@ -52,6 +52,10 @@ async def lifespan(_app: FastAPI):
 
         Base.metadata.create_all(bind=engine)
         logger.info("PostgreSQL tables ensured (redline_suggestions, ...)")
+
+        from app.db.schema_upgrades import apply_schema_upgrades
+
+        apply_schema_upgrades(engine)
     except Exception as exc:  # noqa: BLE001 - non-fatal: degrades gracefully like Neo4j seeding
         logger.warning("PostgreSQL table creation skipped: %s", exc)
 

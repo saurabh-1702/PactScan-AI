@@ -316,3 +316,9 @@ The Phase 6 test "re-running the same simulated update is idempotent" built the 
 
 ### 14.6 — "No approval" is not "original"
 The Versions tab labelled any version with no approval as "Original upload". A restored version also has no approval, so it was mislabelled. Derive labels from what a thing positively is (v1 = original), not from the absence of another marker.
+
+### 14.7 — "Not a problem" was being reported as a problem
+`rediff.py` skipped only ENTAILS, so a NEUTRAL verdict ("this clause doesn't deal with the requirement") became a finding too — its own docstring said only contradictions should. Real LLM runs produced 9, then 13 findings from one amendment on a two-page contract; the mocked tests never noticed because the fake classifier always answered CONTRADICTS. **Lesson:** a classifier's test double that only ever returns the "positive" label cannot catch over-flagging — parametrize the fake over every label. It was found only because a user asked why one amendment flagged so much, and confirmed by running the full lifecycle on real infrastructure.
+
+### 14.8 — A too-clever assertion in my own end-to-end script
+The first live run "failed" at *clean copy has no old wording*. The code was right: the AI's new wording begins with the old wording, so a substring check on the old text was always true. Assert on what the thing *is* (the paragraph equals the new wording, no arrow), not on the absence of a string the result may legitimately contain.
