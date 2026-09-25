@@ -25,6 +25,7 @@ Node / relationship schema:
 from __future__ import annotations
 
 import abc
+import hashlib
 import uuid
 from collections import deque
 from datetime import datetime, timezone
@@ -39,6 +40,22 @@ from app.models.clause import (
 )
 
 DEMO_TENANT = "demo_tenant"
+
+
+def regulation_update_id(regulation_name: str, new_clause_text: str, effective_date: str) -> str:
+    """A regulation update's identity comes from WHAT it says, not from when it
+    was submitted. Submitting the identical update twice must be the same update
+    (so Horizon-Scanning stays idempotent) while any change to the regulation,
+    the wording or the effective date is a genuinely new one. Case and runs of
+    whitespace are ignored so a re-typed or re-pasted copy still matches."""
+    normal = "|".join(
+        [
+            " ".join(regulation_name.split()).lower(),
+            " ".join(new_clause_text.split()).lower(),
+            effective_date.strip(),
+        ]
+    )
+    return f"reg_{hashlib.sha1(normal.encode()).hexdigest()[:12]}"
 
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
@@ -277,7 +294,9 @@ class InMemoryGraphStore(GraphStore):
         return list(self.regulations.values())
 
     def add_regulation_update(self, regulation_name, new_clause_text, effective_date):
-        new_id = f"reg_{uuid.uuid4().hex[:12]}"
+        new_id = regulation_update_id(regulation_name, new_clause_text, effective_date)
+        if new_id in self.regulations:
+            return self.regulations[new_id]  # the identical update was already recorded
         clause = {
             "id": new_id,
             "regulation_name": regulation_name,
@@ -606,14 +625,14 @@ class Neo4jGraphStore(GraphStore):
         )
 
     def add_regulation_update(self, regulation_name, new_clause_text, effective_date):
-        new_id = f"reg_{uuid.uuid4().hex[:12]}"
+        new_id = regulation_update_id(regulation_name, new_clause_text, effective_date)
         section = f"Amendment effective {effective_date}"
+        # MERGE, not CREATE: the identical update is the same node, never a second one
         self._run(
             """
-            CREATE (r:RegulationClause {
-                id: $id, regulation_name: $regulation_name, section: $section,
-                text: $text, effective_date: $effective_date
-            })
+            MERGE (r:RegulationClause {id: $id})
+            ON CREATE SET r.regulation_name = $regulation_name, r.section = $section,
+                          r.text = $text, r.effective_date = $effective_date
             """,
             id=new_id,
             regulation_name=regulation_name,

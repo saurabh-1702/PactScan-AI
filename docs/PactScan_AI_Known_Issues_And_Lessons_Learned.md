@@ -309,3 +309,10 @@ Two tooling traps while making multi-file edits: a long `bash` command mixing se
 - `line-clamp-1` sets `display: -webkit-box`; adding `block` after it overrides that and the clamp silently stops working.
 - A CSS grid column with no explicit template sizes to its widest child, so a `min-w-[36rem]` table pushed the whole page wider than a phone. Give grid children `min-w-0` (and the grid `grid-cols-1`).
 - A tab list with `overflow-x-auto` and a `-mb-px` active underline grows a stray vertical scrollbar; draw the baseline as an inset shadow on the list instead.
+
+### 14.5 — A test that passes because it doesn't do what a user does
+The Phase 6 test "re-running the same simulated update is idempotent" built the regulation clause once and re-diffed it twice — so it passed. The real API builds the clause *afresh on every submit*, and that path minted a random id each time, so a user pressing the button twice got duplicate findings. The bug surfaced only when the user asked what the "0 contracts newly flagged" message required.
+**The lesson:** an idempotency test must repeat the *whole operation the caller performs* (here: `add_regulation_update` + re-diff, twice, with an independently re-typed copy), not just the last step. Identity that should be stable across submissions must come from the content, not from a generator.
+
+### 14.6 — "No approval" is not "original"
+The Versions tab labelled any version with no approval as "Original upload". A restored version also has no approval, so it was mislabelled. Derive labels from what a thing positively is (v1 = original), not from the absence of another marker.

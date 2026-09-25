@@ -131,3 +131,7 @@ Three observations the user made on their own before following the test plan, al
 - *"Drafts that have not been submitted to the Reviewer should have an option to delete them so that one does not get confused with so many drafts of the same contract"* — delete for never-submitted drafts (single and per-contract bulk). The user explicitly ruled out letting an end user withdraw a draft that is already with a reviewer.
 - *"There should be a feature to 'Rename' the Titles of conversation in the Ask Feature"* — rename, and (at the user's request) delete, for conversations.
 - *"I should have 3 written in the Dashboard's Where Findings Stand In Review feature, but it has only mentioned 2"* — traced to Ask drafts not being linked to a finding and to newest-draft-wins staging; fixed (see SETUP_NOTES).
+
+### Found by the user asking "why?"
+
+Asked what Horizon-Scanning's "0 contracts newly flagged · re-running is idempotent" result required, the user prompted a re-read of the code that showed it wasn't idempotent through the real API (fixed). Asked why Restore would need a re-scan, the user correctly pointed out that restoring the original version already matches the findings — which turned a proposed "re-scan" feature into a small honesty fix (clear wording, correct labels) instead of a risky one.

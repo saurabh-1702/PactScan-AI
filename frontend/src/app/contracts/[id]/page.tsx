@@ -25,6 +25,14 @@ import { formatDateTime } from "@/lib/format";
 import { useLoad } from "@/lib/hooks";
 import { useSession } from "@/lib/session";
 
+/** Where a version came from. Only v1 is the original upload: an approved edit
+ * is linked to its approval, and a restored copy is a later version with no
+ * approval at all. */
+function versionOrigin(v: DocumentVersionInfo): string {
+  if (v.version_number === 1) return "Original upload";
+  return v.approval_id ? "Approved edit" : "Restored copy";
+}
+
 export default function ContractDetailPage() {
   const params = useParams<{ id: string }>();
   const contractId = params.id;
@@ -124,11 +132,20 @@ export default function ContractDetailPage() {
                 </span>
               </Alert>
             ) : (
-              <ul className="space-y-3">
-                {findings.map((f) => (
-                  <FindingCard key={f.finding_id} finding={f} />
-                ))}
-              </ul>
+              <>
+                {(versions.data?.length ?? 0) > 1 && (
+                  <p className="mb-3 text-xs text-muted">
+                    Findings come from the original upload. Approved edits and restores made since are
+                    not re-scanned, so a finding marked “fix approved” means a reviewer approved a
+                    change — not that the new wording was re-checked.
+                  </p>
+                )}
+                <ul className="space-y-3">
+                  {findings.map((f) => (
+                    <FindingCard key={f.finding_id} finding={f} />
+                  ))}
+                </ul>
+              </>
             )}
           </TabPanel>
 
@@ -167,7 +184,7 @@ export default function ContractDetailPage() {
                           )}
                         </Td>
                         <Td muted>{formatDateTime(v.created_at)}</Td>
-                        <Td muted>{v.approval_id ? "Approved change or restore" : "Original upload"}</Td>
+                        <Td muted>{versionOrigin(v)}</Td>
                         <Td align="right">
                           <span className="inline-flex gap-2">
                             <Button size="sm" onClick={() => onDownload(v)}>

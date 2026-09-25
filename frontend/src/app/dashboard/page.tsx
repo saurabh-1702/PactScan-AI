@@ -27,7 +27,7 @@ const STAGES: { key: keyof FindingsPipeline; label: string }[] = [
   { key: "new_finding", label: "New" },
   { key: "redline_suggested", label: "Fix drafted" },
   { key: "pending_approval", label: "In review" },
-  { key: "fixed_applied", label: "Fixed" },
+  { key: "fixed_applied", label: "Fix approved" },
   { key: "rejected", label: "Rejected" },
 ];
 
@@ -302,7 +302,7 @@ export default function DashboardPage() {
                     ))}
                   </ul>
                   <p className="mt-3 border-t border-line pt-3 text-xs text-muted">
-                    Counted per finding, using its furthest-along draft. Drafts waiting with a
+                    Counted per finding, using its furthest-along draft. “Fix approved” means a reviewer approved a change; it isn&apos;t re-scanned. Drafts waiting with a
                     reviewer right now:{" "}
                     <span className="font-semibold text-ink">
                       {overview.data?.approvals_by_status.pending ?? 0}

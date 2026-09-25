@@ -667,3 +667,11 @@ Dashboard (needs-attention list, stacked severity bar, pipeline, recent document
 - Not built, by decision: withdrawing a draft that is already with a reviewer. Once submitted, only the reviewer decides it.
 
 17 new mocked tests (121 total).
+
+### Horizon-Scanning made genuinely idempotent; honest version and status wording
+
+- **Duplicate updates fixed.** `add_regulation_update` used to mint a random id on every call, and findings are keyed by that id — so pressing "Simulate update" twice with the same text looked like two different regulations: duplicate findings, duplicate notifications, two identical rows in the update log. A regulation update's id is now derived from its *content* (`regulation_update_id`: regulation name, clause text, effective date, ignoring case and runs of whitespace). The identical update is the same update (in Neo4j a `MERGE`, not a `CREATE`); changing the regulation, the wording or the date makes a new one. Existing duplicates in a dev database are not merged — `scripts/reset_app_data.py` clears them.
+- **Versions tab origin.** Only v1 is "Original upload"; a version tied to an approval is "Approved edit"; a later version with no approval is a "Restored copy". (A restored version has no approval, and the earlier label wrongly called it the original.)
+- **Findings vs later edits, stated honestly.** Findings are created from the original upload. Neither an approved edit nor a restore re-scans the document, so the dashboard stage is now "Fix approved" (a reviewer approved a change) rather than "Fixed", and a contract with more than one version carries a note saying findings come from the original upload. Restoring to the original version needs no re-scan — the findings already describe it. A "Re-scan this version" feature was considered and deliberately not built: it would give every clause a new id, orphaning drafts and pending approvals, and needs its own design.
+
+2 new mocked tests (123 total); the `MERGE` was also run against real Neo4j.

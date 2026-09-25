@@ -160,6 +160,40 @@ async def test_rerunning_the_same_simulated_update_is_idempotent(hzs_store, wire
     assert len(hzs_store.get_findings(CT_AFFECTED)) == 2  # preexisting + the one horizon finding, not 3
 
 
+@pytest.mark.asyncio
+async def test_submitting_the_identical_update_twice_is_one_update_not_two(
+    hzs_store, wire_horizon_fakes, db_session
+):
+    """Regression: the API calls add_regulation_update() afresh on every submit.
+    It used to mint a random id each time, so the second submit looked like a
+    brand-new regulation and duplicated every finding and log entry."""
+    args = ("DPDP Act 2023 (India)", "New mandatory child-consent requirement.", "2026-01-01")
+
+    first_clause = add_regulation_update(hzs_store, *args)
+    first = await rediff_regulation_update(hzs_store, db_session, first_clause, tenant_id=DEMO_TENANT)
+
+    # a re-typed copy: different case and spacing, same meaning
+    second_clause = add_regulation_update(
+        hzs_store, "dpdp act 2023 (india)", "New  mandatory child-consent   requirement.", "2026-01-01"
+    )
+    second = await rediff_regulation_update(hzs_store, db_session, second_clause, tenant_id=DEMO_TENANT)
+
+    assert second_clause["id"] == first_clause["id"]
+    assert first["findings_created"] == 1
+    assert second["findings_created"] == 0 and second["contracts_flagged"] == 0
+    assert len(hzs_store.get_findings(CT_AFFECTED)) == 2  # preexisting + one, never two
+    amendments = [r for r in hzs_store.get_regulation_clauses() if r["section"].startswith("Amendment")]
+    assert len(amendments) == 1
+
+
+def test_a_different_update_is_a_different_update(hzs_store):
+    base = ("DPDP Act 2023 (India)", "New mandatory child-consent requirement.", "2026-01-01")
+    a = add_regulation_update(hzs_store, *base)
+    assert add_regulation_update(hzs_store, base[0], base[1], "2026-02-01")["id"] != a["id"]  # date
+    assert add_regulation_update(hzs_store, base[0], base[1] + " Extra.", base[2])["id"] != a["id"]  # text
+    assert add_regulation_update(hzs_store, "GDPR", base[1], base[2])["id"] != a["id"]  # regulation
+
+
 # --------------------------------------------------------------------------- #
 # Restore
 # --------------------------------------------------------------------------- #
