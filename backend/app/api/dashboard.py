@@ -80,12 +80,7 @@ def findings_pipeline(
     sq = db.query(RedlineSuggestion).filter(RedlineSuggestion.tenant_id == current_user.tenant_id)
     if visible is not None:
         sq = sq.filter(RedlineSuggestion.contract_id.in_(visible))
-    suggestions = sq.order_by(RedlineSuggestion.created_at.desc()).all()
-    # latest suggestion per finding_id wins, for a finding re-suggested more than once
-    latest_suggestion_by_finding: dict[str, RedlineSuggestion] = {}
-    for s in suggestions:
-        if s.finding_id and s.finding_id not in latest_suggestion_by_finding:
-            latest_suggestion_by_finding[s.finding_id] = s
+    suggestions = sq.all()
 
     approval_status_by_suggestion: dict[str, str] = {}
     if suggestions:
@@ -97,6 +92,24 @@ def findings_pipeline(
         )
         for a in approvals:
             approval_status_by_suggestion.setdefault(a.redline_suggestion_id, a.status)
+
+    # A finding can have several drafts (re-drafted, drafted from Ask, ...). Its
+    # stage is that of the FURTHEST-ADVANCED one — so a newer, still-unsubmitted
+    # draft can't hide an older one that is already with a reviewer.
+    stage_of = {
+        None: ("redline_suggested", 1),
+        "pending": ("pending_approval", 2),
+        "approved": ("fixed_applied", 3),
+        "rejected": ("rejected", 0),
+    }
+    best_stage_by_finding: dict[str, tuple[str, int]] = {}
+    for s in suggestions:
+        if not s.finding_id:
+            continue
+        stage = stage_of.get(approval_status_by_suggestion.get(s.id), stage_of[None])
+        current = best_stage_by_finding.get(s.finding_id)
+        if current is None or stage[1] > current[1]:
+            best_stage_by_finding[s.finding_id] = stage
 
     buckets: dict[str, list[PipelineFinding]] = {
         "new_finding": [],
@@ -112,17 +125,7 @@ def findings_pipeline(
             severity=f["severity"],
             rule_or_regulation_violated=f["rule_or_regulation_violated"],
         )
-        suggestion = latest_suggestion_by_finding.get(f["finding_id"])
-        if suggestion is None:
-            buckets["new_finding"].append(item)
-            continue
-        approval_status = approval_status_by_suggestion.get(suggestion.id)
-        stage = {
-            None: "redline_suggested",
-            "pending": "pending_approval",
-            "approved": "fixed_applied",
-            "rejected": "rejected",
-        }.get(approval_status, "redline_suggested")
-        buckets[stage].append(item)
+        best = best_stage_by_finding.get(f["finding_id"])
+        buckets[best[0] if best else "new_finding"].append(item)
 
     return FindingsPipeline(**buckets)

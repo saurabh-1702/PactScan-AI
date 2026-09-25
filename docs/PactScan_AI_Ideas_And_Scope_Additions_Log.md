@@ -124,3 +124,10 @@ Listed by the user as *"Issues or Changes I thought should be there in order to 
 - **Horizon Scanning as an update log plus an admin trigger** — the log became readable by every role (with the "simulated" disclaimer kept), so the page moved out of `/admin`.
 - **Small read-only backend additions** — contract list, current-user info, who decided each approval, quoted evidence on Ask sources, the regulatory-update log.
 - **Lucide + Radix primitives + cmdk** as the only new dependencies, with a "unique and not at all like AI-slop websites" brief: no gradients, no emoji, no decorative KPI tiles; findings marked with a dot *and* a word; one accent colour.
+
+### Found by the user while testing the redesigned app
+
+Three observations the user made on their own before following the test plan, all built:
+- *"Drafts that have not been submitted to the Reviewer should have an option to delete them so that one does not get confused with so many drafts of the same contract"* — delete for never-submitted drafts (single and per-contract bulk). The user explicitly ruled out letting an end user withdraw a draft that is already with a reviewer.
+- *"There should be a feature to 'Rename' the Titles of conversation in the Ask Feature"* — rename, and (at the user's request) delete, for conversations.
+- *"I should have 3 written in the Dashboard's Where Findings Stand In Review feature, but it has only mentioned 2"* — traced to Ask drafts not being linked to a finding and to newest-draft-wins staging; fixed (see SETUP_NOTES).

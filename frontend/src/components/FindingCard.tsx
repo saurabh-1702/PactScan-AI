@@ -77,6 +77,7 @@ export default function FindingCard({ finding: f }: { finding: Finding }) {
             suggestionId={suggestion.suggestion_id}
             aiDraft={suggestion.proposed_text}
             rationale={`${suggestion.rationale} (confidence ${suggestion.confidence})`}
+            onDiscarded={() => setSuggestion(null)}
           />
           {hasNotes && (
             <div className="mt-3">

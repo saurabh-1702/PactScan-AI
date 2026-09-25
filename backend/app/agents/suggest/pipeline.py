@@ -92,11 +92,18 @@ async def suggest_standalone(
     ctx = await retrieve_context(
         store, clause, change_request=change_request, finding=None, tenant_id=tenant_id
     )
+    # An edit that targets a clause with exactly ONE finding is a fix for that
+    # finding, so the dashboard can count it. With several findings on the same
+    # clause it is ambiguous which one it fixes, so it stays unlinked.
+    on_clause = [
+        f for f in store.get_findings(contract_id, tenant_id=tenant_id) if f.clause_id == clause_id
+    ]
+    linked_finding_id = on_clause[0].finding_id if len(on_clause) == 1 else None
     return await _run_pipeline(
         db,
         ctx,
         clause,
-        finding_id=None,
+        finding_id=linked_finding_id,
         run_adversarial=run_adversarial,
         tenant_id=tenant_id,
         requested_by_user_id=requested_by_user_id,

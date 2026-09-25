@@ -5,7 +5,7 @@ from __future__ import annotations
 import enum
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class AskScope(str, enum.Enum):
@@ -82,6 +82,20 @@ class AskResponse(BaseModel):
     approval_id: str | None = None
     # set for FILE_ATTACHED: the contract the attached file became
     contract_id: str | None = None
+
+
+class RenameSessionRequest(BaseModel):
+    title: str
+
+    @field_validator("title")
+    @classmethod
+    def _clean(cls, v: str) -> str:
+        v = " ".join(v.split())
+        if not v:
+            raise ValueError("The title can't be empty.")
+        if len(v) > 80:
+            raise ValueError("The title can be at most 80 characters.")
+        return v
 
 
 class ChatSessionOut(BaseModel):

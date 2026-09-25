@@ -24,7 +24,14 @@ from app.api.detect import _ALLOWED_SUFFIXES, _valid_job_id
 from app.core.progress import JobProgress
 from app.db.models import ChatMessage, ChatSession
 from app.db.postgres_client import get_db
-from app.models.ask import AskRequest, AskResponse, AskSource, ChatMessageOut, ChatSessionOut
+from app.models.ask import (
+    AskRequest,
+    AskResponse,
+    AskSource,
+    ChatMessageOut,
+    ChatSessionOut,
+    RenameSessionRequest,
+)
 
 logger = logging.getLogger("pactscan.api.ask")
 
@@ -205,3 +212,45 @@ def get_session_messages(
             )
         )
     return out
+
+
+def _own_session(db: Session, session_id: str, user: CurrentUser) -> ChatSession:
+    session = db.get(ChatSession, session_id)
+    if session is None or session.tenant_id != user.tenant_id or session.user_id != user.user_id:
+        raise HTTPException(404, f"chat session {session_id!r} not found")
+    return session
+
+
+@router.patch("/sessions/{session_id}", response_model=ChatSessionOut)
+def rename_session(
+    session_id: str,
+    body: RenameSessionRequest,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
+) -> ChatSessionOut:
+    session = _own_session(db, session_id, current_user)
+    session.title = body.title
+    db.commit()
+    db.refresh(session)
+    return ChatSessionOut(
+        id=session.id,
+        title=session.title,
+        created_at=session.created_at,
+        updated_at=session.updated_at,
+        active_contract_id=session.active_contract_id,
+    )
+
+
+@router.delete("/sessions/{session_id}")
+def delete_session(
+    session_id: str,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
+) -> dict:
+    """Deletes one of the caller's own conversations and its messages. Drafts
+    and contracts created during it are separate records and are untouched."""
+    session = _own_session(db, session_id, current_user)
+    db.query(ChatMessage).filter(ChatMessage.session_id == session.id).delete()
+    db.delete(session)
+    db.commit()
+    return {"deleted": 1}

@@ -23,7 +23,8 @@ as an update log with an admin-only trigger, contract page, notifications).
 - **Horizon Scanning is now at `/horizon-scanning`** (readable by every role; only admins can trigger).
 - New backend endpoints: `/api/auth/me`, `/api/contracts`, `/api/progress/*`,
   `/api/horizon-scanning/updates`; `decided_by` recorded on approvals/restores.
-- Tests: 104 mocked pass. **Requires a dev DB reset** (`docker compose down -v`).
+- Delete unsubmitted drafts, rename/delete Ask conversations, corrected dashboard counts.
+- Tests: 121 mocked pass. **Requires a dev DB reset** (`docker compose down -v`).
 - Not yet merged; manual end-to-end testing (including G Horizon Scanning and H Restore) pending.
 
 **Phase 6b — realism fixes from manual testing (built on the Phase 6 branch, before Phase 7).**

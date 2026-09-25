@@ -14,14 +14,16 @@ touches the Executor.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+import json
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.agents.detect.graph_store import GraphStore, get_graph_store
 from app.agents.suggest.pipeline import SubmissionError, enqueue_for_review
 from app.api.access import ensure_contract_access
 from app.api.deps import CurrentUser, get_current_user
-from app.db.models import Approval, DocumentVersion, RedlineSuggestion, User
+from app.db.models import Approval, AuditLog, DocumentVersion, RedlineSuggestion, User
 from app.db.postgres_client import get_db
 from app.models.drafts import DraftOut, SubmitDraftRequest
 
@@ -129,3 +131,65 @@ def submit_draft(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     db.refresh(sg)
     return _build(db, store, sg, _filenames(store, current_user.tenant_id))
+
+
+def _is_submitted(db: Session, suggestion_id: str) -> bool:
+    return (
+        db.query(Approval).filter(Approval.redline_suggestion_id == suggestion_id).first() is not None
+    )
+
+
+@router.delete("/{suggestion_id}")
+def delete_draft(
+    suggestion_id: str,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
+) -> dict:
+    """Discard a draft that was never submitted. Anything that has reached a
+    reviewer (pending or decided) is part of the approval record and cannot be
+    deleted."""
+    sg = _own_suggestion(db, suggestion_id, current_user)
+    if _is_submitted(db, sg.id):
+        raise HTTPException(
+            409, "This draft has been submitted for review, so it can't be deleted."
+        )
+    db.add(
+        AuditLog(
+            event_type="draft_deleted",
+            entity_id=sg.id,
+            details=json.dumps({"contract_id": sg.contract_id, "by": current_user.user_id}),
+        )
+    )
+    db.delete(sg)
+    db.commit()
+    return {"deleted": 1}
+
+
+@router.delete("")
+def delete_unsubmitted_drafts(
+    contract_id: str = Query(..., description="Only this contract's drafts"),
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
+) -> dict:
+    """Discard every not-yet-submitted draft the caller made for one contract."""
+    rows = (
+        db.query(RedlineSuggestion)
+        .filter(
+            RedlineSuggestion.tenant_id == current_user.tenant_id,
+            RedlineSuggestion.requested_by_user_id == current_user.user_id,
+            RedlineSuggestion.contract_id == contract_id,
+        )
+        .all()
+    )
+    deletable = [sg for sg in rows if not _is_submitted(db, sg.id)]
+    for sg in deletable:
+        db.add(
+            AuditLog(
+                event_type="draft_deleted",
+                entity_id=sg.id,
+                details=json.dumps({"contract_id": sg.contract_id, "by": current_user.user_id}),
+            )
+        )
+        db.delete(sg)
+    db.commit()
+    return {"deleted": len(deletable)}

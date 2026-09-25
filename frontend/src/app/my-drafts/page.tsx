@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Download, FileEdit, Search } from "lucide-react";
+import { Download, FileEdit, Search, Trash2 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
 import DiffText, { DiffLegend } from "@/components/DiffText";
@@ -14,7 +14,14 @@ import { Input, Select } from "@/components/ui/Field";
 import { Page, PageHeader } from "@/components/ui/Layout";
 import { Table, Td, Th, THead, Tr } from "@/components/ui/Table";
 import { useToast } from "@/components/ui/Toast";
-import { downloadDocumentVersion, getMyDrafts, type DraftInfo, type DraftStatus } from "@/lib/api";
+import {
+  deleteDraft,
+  deleteUnsubmittedDrafts,
+  downloadDocumentVersion,
+  getMyDrafts,
+  type DraftInfo,
+  type DraftStatus,
+} from "@/lib/api";
 import { formatDateTime, timeAgo } from "@/lib/format";
 import { useDebounced, useLoad } from "@/lib/hooks";
 
@@ -164,7 +171,21 @@ function DraftsView() {
         title={open?.filename ?? "Draft"}
         description={open ? STATUS[open.status].label : undefined}
       >
-        {open && <DraftDetail d={open} onDownload={() => onDownload(open)} onSubmitted={drafts.reload} />}
+        {open && (
+          <DraftDetail
+            d={open}
+            unsubmittedForContract={
+              (drafts.data ?? []).filter((x) => x.contract_id === open.contract_id && x.status === "draft").length
+            }
+            onDownload={() => onDownload(open)}
+            onSubmitted={drafts.reload}
+            onDeleted={(message) => {
+              toast.success(message);
+              setOpenId(null);
+              drafts.reload();
+            }}
+          />
+        )}
       </Dialog>
     </Page>
   );
@@ -172,13 +193,39 @@ function DraftsView() {
 
 function DraftDetail({
   d,
+  unsubmittedForContract,
   onDownload,
   onSubmitted,
+  onDeleted,
 }: {
   d: DraftInfo;
+  unsubmittedForContract: number;
   onDownload: () => void;
   onSubmitted: () => void;
+  onDeleted: (message: string) => void;
 }) {
+  const toast = useToast();
+  const [confirm, setConfirm] = useState<"one" | "all" | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  async function runDelete(scope: "one" | "all") {
+    setDeleting(true);
+    try {
+      if (scope === "one") {
+        await deleteDraft(d.suggestion_id);
+        onDeleted("Draft deleted.");
+      } else {
+        const n = await deleteUnsubmittedDrafts(d.contract_id);
+        onDeleted(`${n} not-yet-submitted draft${n === 1 ? "" : "s"} deleted.`);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not delete");
+      setConfirm(null);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   const submitted = d.requester_edited_text ?? d.ai_draft_text;
   const reviewerChanged =
     d.reviewer_edited_text !== null && d.reviewer_edited_text.trim() !== submitted.trim();
@@ -272,6 +319,40 @@ function DraftDetail({
           Open the contract
         </Link>
       </div>
+
+      {d.status === "draft" && (
+        <div className="rounded-md border border-line bg-canvas p-3.5">
+          {confirm === null ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button size="sm" variant="danger" onClick={() => setConfirm("one")}>
+                <Trash2 className="h-3.5 w-3.5" aria-hidden /> Delete this draft
+              </Button>
+              {unsubmittedForContract > 1 && (
+                <Button size="sm" variant="danger" onClick={() => setConfirm("all")}>
+                  Delete all {unsubmittedForContract} not-submitted drafts for this document
+                </Button>
+              )}
+              <span className="text-xs text-muted">
+                Only drafts you haven&apos;t submitted can be deleted.
+              </span>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2 text-[13px]">
+              <span className="text-ink">
+                {confirm === "one"
+                  ? "Delete this draft? This can't be undone."
+                  : `Delete all ${unsubmittedForContract} not-submitted drafts for this document? This can't be undone.`}
+              </span>
+              <Button size="sm" variant="danger" loading={deleting} onClick={() => runDelete(confirm)}>
+                Yes, delete
+              </Button>
+              <Button size="sm" variant="ghost" disabled={deleting} onClick={() => setConfirm(null)}>
+                Keep
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -6,7 +6,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Feedback";
 import { Textarea } from "@/components/ui/Field";
-import { submitDraft, type DraftInfo } from "@/lib/api";
+import { deleteDraft, submitDraft, type DraftInfo } from "@/lib/api";
 
 /** Shown wherever a fresh AI draft appears (Suggest fix, an edit instruction in
  * Ask, a draft in My Drafts). The requester previews the AI's text, can edit it
@@ -18,16 +18,20 @@ export default function DraftSubmitPanel({
   aiDraft,
   rationale,
   onSubmitted,
+  onDiscarded,
 }: {
   suggestionId: string;
   aiDraft: string;
   rationale?: string;
   onSubmitted?: (d: DraftInfo) => void;
+  /** Called after the user throws the draft away. */
+  onDiscarded?: () => void;
 }) {
   const [text, setText] = useState(aiDraft);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState<DraftInfo | null>(null);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
 
   const edited = text.trim() !== aiDraft.trim();
 
@@ -40,6 +44,20 @@ export default function DraftSubmitPanel({
       onSubmitted?.(d);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not submit");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onDiscard() {
+    setBusy(true);
+    setError(null);
+    try {
+      await deleteDraft(suggestionId);
+      onDiscarded?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not discard the draft");
+      setConfirmDiscard(false);
     } finally {
       setBusy(false);
     }
@@ -102,6 +120,25 @@ export default function DraftSubmitPanel({
         <span className="text-xs text-muted">
           {edited ? "You've changed the AI's text." : "Unchanged — submits the AI's text as-is."}
         </span>
+        {onDiscarded && (
+          <span className="ml-auto">
+            {confirmDiscard ? (
+              <span className="inline-flex items-center gap-2 text-xs text-muted">
+                Discard this draft?
+                <Button size="sm" variant="danger" loading={busy} onClick={onDiscard}>
+                  Yes, discard
+                </Button>
+                <Button size="sm" variant="ghost" disabled={busy} onClick={() => setConfirmDiscard(false)}>
+                  Keep
+                </Button>
+              </span>
+            ) : (
+              <Button size="sm" variant="ghost" disabled={busy} onClick={() => setConfirmDiscard(true)}>
+                Discard draft
+              </Button>
+            )}
+          </span>
+        )}
       </div>
     </div>
   );

@@ -658,3 +658,12 @@ Dashboard (needs-attention list, stacked severity bar, pipeline, recent document
 - Ask sources carry a quoted `excerpt`, taken from the passage that was actually retrieved — never from the model's own output.
 
 **Requires a dev DB reset** (new columns): `docker compose down -v`. 16 new mocked tests (104 total). The new Cypher and the Redis tracker were also run against the real containers, and the full flow (upload with progress, draft, edit, approve, restore, Horizon Scanning, Ask with evidence) was driven through the real UI.
+
+### Follow-ups found during the user's own testing (redesign branch)
+
+- **Delete drafts that were never submitted.** `DELETE /api/my-drafts/{id}` and `DELETE /api/my-drafts?contract_id=` (bulk, one contract). Only the requester's own drafts, only if no approval exists — anything that has reached a reviewer (pending or decided) is part of the approval record and returns 409. Each deletion is written to the audit log. In the UI: "Delete this draft" / "Delete all N not-submitted drafts for this document" in the My Drafts sheet, and "Discard draft" on a fresh draft in Detect / Ask. A deleted draft referenced by an old Ask chat shows "This draft was deleted."
+- **Rename and delete Ask conversations.** `PATCH /api/ask/sessions/{id}` (title trimmed, whitespace collapsed, 1-80 characters) and `DELETE /api/ask/sessions/{id}` (removes the messages; drafts and contracts made during the chat are separate records and stay). Own conversations only (404 otherwise). Double-click a title, or use the pencil / bin icons.
+- **Dashboard "Where findings stand" now counts correctly.** It counts *findings*, not drafts, and two things made it look short: (1) drafts created from Ask were not linked to any finding, so they were never counted; (2) a finding's stage came from its *newest* draft, so a newer unsubmitted draft hid an older one already with a reviewer. Now: an Ask edit that targets a clause with exactly one finding is linked to it (with several findings on the clause it is ambiguous and stays unlinked); a finding's stage is its *furthest-advanced* draft (fixed > in review > drafted > rejected); and the card also shows the real number of drafts currently with a reviewer, taken from the approvals themselves.
+- Not built, by decision: withdrawing a draft that is already with a reviewer. Once submitted, only the reviewer decides it.
+
+17 new mocked tests (121 total).

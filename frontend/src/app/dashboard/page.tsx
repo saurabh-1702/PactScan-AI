@@ -292,14 +292,24 @@ export default function DashboardPage() {
               {pipeline.loading && !pipeline.data ? (
                 <Skeleton className="h-24" />
               ) : (
-                <ul className="space-y-2">
-                  {STAGES.map(({ key, label }) => (
-                    <li key={key} className="flex items-center justify-between text-[13px]">
-                      <span className="text-muted">{label}</span>
-                      <span className="font-medium text-ink">{pipeline.data?.[key].length ?? 0}</span>
-                    </li>
-                  ))}
-                </ul>
+                <>
+                  <ul className="space-y-2">
+                    {STAGES.map(({ key, label }) => (
+                      <li key={key} className="flex items-center justify-between text-[13px]">
+                        <span className="text-muted">{label}</span>
+                        <span className="font-medium text-ink">{pipeline.data?.[key].length ?? 0}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-3 border-t border-line pt-3 text-xs text-muted">
+                    Counted per finding, using its furthest-along draft. Drafts waiting with a
+                    reviewer right now:{" "}
+                    <span className="font-semibold text-ink">
+                      {overview.data?.approvals_by_status.pending ?? 0}
+                    </span>
+                    .
+                  </p>
+                </>
               )}
             </Card>
           </section>

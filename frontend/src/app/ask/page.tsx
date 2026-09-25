@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FileText, Loader2, MessageSquare, Paperclip, Plus, SendHorizontal, X } from "lucide-react";
+import { Check, FileText, Loader2, MessageSquare, Paperclip, Pencil, Plus, SendHorizontal, Trash2, X } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import DraftSubmitPanel from "@/components/DraftSubmitPanel";
@@ -11,12 +11,14 @@ import { StageProgress } from "@/components/ui/StageProgress";
 import { cn } from "@/components/ui/cn";
 import {
   clearActiveDocument,
+  deleteChatSession,
   getChatMessages,
   getChatSessions,
   getMyDraft,
   newJobId,
   postAsk,
   postAskAttach,
+  renameChatSession,
   type AskResponseType,
   type AskSourceInfo,
   type ChatSessionInfo,
@@ -57,14 +59,20 @@ const SUGGESTED = [
 function AskDraft({ suggestionId }: { suggestionId: string }) {
   const [draft, setDraft] = useState<DraftInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [discarded, setDiscarded] = useState(false);
 
   useEffect(() => {
     getMyDraft(suggestionId)
       .then(setDraft)
-      .catch((e) => setError(e instanceof Error ? e.message : "Could not load the draft"));
+      .catch((e) => {
+        const message = e instanceof Error ? e.message : "";
+        // a draft that was deleted from My Drafts (or discarded here) is gone for good
+        setError(/not found/i.test(message) ? "This draft was deleted." : message || "Could not load the draft");
+      });
   }, [suggestionId]);
 
-  if (error) return <p className="mt-2 text-xs text-danger-ink">{error}</p>;
+  if (discarded) return <p className="mt-2 text-xs text-muted">Draft discarded.</p>;
+  if (error) return <p className="mt-2 text-xs text-muted">{error}</p>;
   if (!draft) return <p className="mt-2 text-xs text-muted">Loading draft…</p>;
   if (draft.status === "draft") {
     return (
@@ -72,6 +80,7 @@ function AskDraft({ suggestionId }: { suggestionId: string }) {
         suggestionId={draft.suggestion_id}
         aiDraft={draft.ai_draft_text}
         rationale={draft.rationale}
+        onDiscarded={() => setDiscarded(true)}
       />
     );
   }
@@ -139,6 +148,9 @@ function AskView() {
   const [error, setError] = useState<string | null>(null);
   const [attaching, setAttaching] = useState<{ name: string; jobId: string } | null>(null);
   const [activeDoc, setActiveDoc] = useState<{ id: string; name: string } | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draftTitle, setDraftTitle] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -266,6 +278,31 @@ function AskView() {
     }
   }
 
+  async function saveTitle(id: string) {
+    const title = draftTitle.trim();
+    const current = sessions.find((x) => x.id === id);
+    setEditingId(null);
+    if (!title || title === current?.title) return;
+    try {
+      const updated = await renameChatSession(id, title);
+      setSessions((prev) => prev.map((x) => (x.id === id ? { ...x, title: updated.title } : x)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not rename the conversation");
+    }
+  }
+
+  async function removeSession(id: string) {
+    try {
+      await deleteChatSession(id);
+      setSessions((prev) => prev.filter((x) => x.id !== id));
+      if (id === sessionId) startNewChat();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not delete the conversation");
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   async function onDetach() {
     if (!sessionId) return;
     try {
@@ -300,19 +337,92 @@ function AskView() {
             <li className="px-2 py-2 text-xs text-muted">Your conversations will be listed here.</li>
           )}
           {sessions.map((s) => (
-            <li key={s.id}>
-              <button
-                type="button"
-                onClick={() => openSession(s.id, sessions)}
-                aria-current={s.id === sessionId ? "true" : undefined}
-                className={cn(
-                  "block w-full rounded-md px-2.5 py-2 text-left",
-                  s.id === sessionId ? "bg-accent-soft" : "hover:bg-hover",
-                )}
-              >
-                <span className="block truncate text-[13px] font-medium text-ink">{s.title}</span>
-                <span className="block text-xs text-muted">{timeAgo(s.updated_at)}</span>
-              </button>
+            <li key={s.id} className="group relative">
+              {editingId === s.id ? (
+                <form
+                  className="flex items-center gap-1 rounded-md bg-accent-soft px-2 py-1.5"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    saveTitle(s.id);
+                  }}
+                >
+                  <input
+                    autoFocus
+                    aria-label="Conversation title"
+                    value={draftTitle}
+                    maxLength={80}
+                    onChange={(e) => setDraftTitle(e.target.value)}
+                    onKeyDown={(e) => e.key === "Escape" && setEditingId(null)}
+                    onBlur={() => saveTitle(s.id)}
+                    className="min-w-0 flex-1 rounded border border-line-strong bg-surface px-1.5 py-1 text-[13px] text-ink focus:border-accent focus:outline-none"
+                  />
+                  <button
+                    type="submit"
+                    aria-label="Save title"
+                    onMouseDown={(e) => e.preventDefault()}
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-accent hover:bg-surface"
+                  >
+                    <Check className="h-3.5 w-3.5" aria-hidden />
+                  </button>
+                </form>
+              ) : deletingId === s.id ? (
+                <div className="rounded-md bg-danger-soft px-2.5 py-2 text-xs text-danger-ink">
+                  <p className="font-medium">Delete this conversation?</p>
+                  <div className="mt-1.5 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => removeSession(s.id)}
+                      className="rounded bg-danger px-2 py-0.5 font-medium text-white"
+                    >
+                      Delete
+                    </button>
+                    <button type="button" onClick={() => setDeletingId(null)} className="font-medium underline">
+                      Keep
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => openSession(s.id, sessions)}
+                    onDoubleClick={() => {
+                      setDraftTitle(s.title);
+                      setEditingId(s.id);
+                    }}
+                    title="Double-click to rename"
+                    aria-current={s.id === sessionId ? "true" : undefined}
+                    className={cn(
+                      "block w-full rounded-md px-2.5 py-2 pr-14 text-left",
+                      s.id === sessionId ? "bg-accent-soft" : "hover:bg-hover",
+                    )}
+                  >
+                    <span className="block truncate text-[13px] font-medium text-ink">{s.title}</span>
+                    <span className="block text-xs text-muted">{timeAgo(s.updated_at)}</span>
+                  </button>
+                  <span className="absolute right-1 top-1.5 flex opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                    <button
+                      type="button"
+                      aria-label={`Rename ${s.title}`}
+                      onClick={() => {
+                        setDraftTitle(s.title);
+                        setEditingId(s.id);
+                      }}
+                      className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-surface hover:text-ink"
+                    >
+                      <Pencil className="h-3.5 w-3.5" aria-hidden />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Delete ${s.title}`}
+                      onClick={() => setDeletingId(s.id)}
+                      className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-surface hover:text-danger-ink"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                    </button>
+                  </span>
+                </>
+              )}
             </li>
           ))}
         </ul>

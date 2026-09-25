@@ -571,6 +571,36 @@ export async function submitDraft(suggestionId: string, editedText?: string): Pr
   return handleJson<DraftInfo>(res);
 }
 
+/** Discards a draft that was never submitted. Anything already with a reviewer
+ * (or decided) can't be deleted — the server refuses it. */
+export async function deleteDraft(suggestionId: string): Promise<void> {
+  const res = await authFetch(`/api/my-drafts/${suggestionId}`, { method: "DELETE" });
+  await handleJson<unknown>(res);
+}
+
+/** Discards every not-yet-submitted draft you made for one contract. */
+export async function deleteUnsubmittedDrafts(contractId: string): Promise<number> {
+  const res = await authFetch(`/api/my-drafts?contract_id=${encodeURIComponent(contractId)}`, {
+    method: "DELETE",
+  });
+  const body = await handleJson<{ deleted: number }>(res);
+  return body.deleted;
+}
+
+export async function renameChatSession(sessionId: string, title: string): Promise<ChatSessionInfo> {
+  const res = await authFetch(`/api/ask/sessions/${sessionId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title }),
+  });
+  return handleJson<ChatSessionInfo>(res);
+}
+
+export async function deleteChatSession(sessionId: string): Promise<void> {
+  const res = await authFetch(`/api/ask/sessions/${sessionId}`, { method: "DELETE" });
+  await handleJson<unknown>(res);
+}
+
 /** Attach a contract to an Ask conversation. This is a real upload — the full
  * Detect pipeline runs on it (so it can take a while) — and the file becomes
  * the conversation's active document. */
