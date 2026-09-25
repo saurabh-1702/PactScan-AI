@@ -214,26 +214,100 @@ async def test_rediff_can_be_limited_to_one_contract_and_run_without_notifying(
     assert db_session.query(Notification).count() == 1
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("label", ["NEUTRAL", "ENTAILS"])
-async def test_only_a_real_contradiction_is_flagged_not_a_neutral_or_compliant_clause(
-    hzs_store, wire_horizon_fakes, db_session, monkeypatch, label
-):
-    """Regression: NEUTRAL ("this clause doesn't deal with the subject") used to
-    become a finding too, flooding contracts with topically-nearby clauses."""
+def _wire_classifier(monkeypatch, by_marker: dict[str, str], default: str):
+    """Classify by a marker word in the clause text (the prompt carries it)."""
     from app.models.clause import ConfidenceLevel, NLILabel, NLIResult
 
     async def _classify(prompt, schema, system_prompt=None):
-        return NLIResult(
-            label=NLILabel[label], explanation="not a problem", confidence=ConfidenceLevel.high
-        )
+        label = next((lab for marker, lab in by_marker.items() if marker in prompt), default)
+        return NLIResult(label=NLILabel[label], explanation="because", confidence=ConfidenceLevel.high)
 
     monkeypatch.setattr("app.llm.client.generate_structured", _classify)
-    clause = add_regulation_update(hzs_store, "DPDP Act 2023 (India)", "A new requirement.", "2026-01-01")
-    summary = await rediff_regulation_update(hzs_store, db_session, clause, tenant_id=DEMO_TENANT)
 
-    assert summary["findings_created"] == 0 and summary["contracts_flagged"] == 0
-    assert [f.finding_id for f in hzs_store.get_findings(CT_AFFECTED)] == ["fnd_preexisting"]
+
+def _add_second_clause(store):
+    """A second, closely related clause in the affected contract."""
+    store.add_clause(
+        ExtractedClause(
+            clause_id="cl_second",
+            contract_id=CT_AFFECTED,
+            clause_type=ClauseType.DATA_PROCESSING,
+            page_number=2,
+            section_header="Children",
+            raw_text="SECONDMARKER clause about children's data.",
+            confidence=ConfidenceLevel.high,
+        ),
+        tenant_id=DEMO_TENANT,
+    )
+    store.set_clause_embedding("cl_second", [0.9, 0.1], tenant_id=DEMO_TENANT)
+
+
+async def _run_update(store, db):
+    clause = add_regulation_update(store, "DPDP Act 2023 (India)", "A new requirement.", "2026-01-01")
+    return await rediff_regulation_update(store, db, clause, tenant_id=DEMO_TENANT)
+
+
+def _horizon_findings(store):
+    return [f for f in store.get_findings(CT_AFFECTED) if f.finding_id != "fnd_preexisting"]
+
+
+@pytest.mark.asyncio
+async def test_a_contract_silent_on_a_new_requirement_gets_ONE_gap_finding_not_one_per_clause(
+    hzs_store, wire_horizon_fakes, db_session, monkeypatch
+):
+    """Regression for the flood (13 findings from one amendment): every related
+    clause NEUTRAL means the contract is silent — one finding for the contract."""
+    _add_second_clause(hzs_store)
+    _wire_classifier(monkeypatch, {}, default="NEUTRAL")
+
+    summary = await _run_update(hzs_store, db_session)
+
+    found = _horizon_findings(hzs_store)
+    assert len(found) == 1 and summary["findings_created"] == 1
+    assert found[0].explanation.startswith("No clause in this contract addresses")
+    assert found[0].severity.value == "HIGH"
+    assert hzs_store.get_findings(CT_CLEAN) == []
+
+
+@pytest.mark.asyncio
+async def test_no_finding_when_something_in_the_contract_already_satisfies_the_requirement(
+    hzs_store, wire_horizon_fakes, db_session, monkeypatch
+):
+    _add_second_clause(hzs_store)
+    _wire_classifier(monkeypatch, {"SECONDMARKER": "ENTAILS"}, default="NEUTRAL")
+
+    summary = await _run_update(hzs_store, db_session)
+
+    assert summary["findings_created"] == 0 and _horizon_findings(hzs_store) == []
+
+
+@pytest.mark.asyncio
+async def test_a_real_contradiction_is_flagged_and_neutral_neighbours_are_not(
+    hzs_store, wire_horizon_fakes, db_session, monkeypatch
+):
+    _add_second_clause(hzs_store)
+    _wire_classifier(monkeypatch, {"SECONDMARKER": "CONTRADICTS"}, default="NEUTRAL")
+
+    await _run_update(hzs_store, db_session)
+
+    found = _horizon_findings(hzs_store)
+    assert [f.clause_id for f in found] == ["cl_second"]  # only the clause that creates the problem
+    assert not found[0].explanation.startswith("No clause in this contract addresses")
+
+
+@pytest.mark.asyncio
+async def test_all_compliant_means_no_finding(hzs_store, wire_horizon_fakes, db_session, monkeypatch):
+    _wire_classifier(monkeypatch, {}, default="ENTAILS")
+    assert (await _run_update(hzs_store, db_session))["findings_created"] == 0
+
+
+def test_baseline_regulation_clauses_carry_an_effective_date(hzs_store):
+    from app.agents.detect.seed_data import seed
+
+    seed(hzs_store)
+    baseline = [r for r in hzs_store.get_regulation_clauses() if not r["section"].startswith("Amendment")]
+    assert baseline and all(r.get("effective_date") for r in baseline)
+    assert {r["effective_date"] for r in baseline if "GDPR" in r["regulation_name"]} == {"2018-05-25"}
 
 
 def test_a_different_update_is_a_different_update(hzs_store):

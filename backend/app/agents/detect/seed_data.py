@@ -125,6 +125,16 @@ DPDP_CLAUSES: list[dict] = [
     },
 ]
 
+# Baseline clauses carry a date too (Phase 6: every RegulationClause has one).
+# DPDP: the Act received Presidential assent on 2023-08-11 (its provisions are
+# brought into force in phases by notification, so this is the enactment date).
+# GDPR: applicable since 2018-05-25.
+_DPDP_DATE = "2023-08-11"
+_GDPR_DATE = "2018-05-25"
+for _c in DPDP_CLAUSES:
+    _c["effective_date"] = _DPDP_DATE
+
+
 # --- GDPR — secondary regulation: 2 clauses -------------------------------
 GDPR_CLAUSES: list[dict] = [
     {
@@ -150,6 +160,9 @@ GDPR_CLAUSES: list[dict] = [
         ),
     },
 ]
+
+for _c in GDPR_CLAUSES:
+    _c["effective_date"] = _GDPR_DATE
 
 
 def seed(store: GraphStore, tenant_id: str = DEMO_TENANT) -> None:

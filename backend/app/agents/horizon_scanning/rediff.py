@@ -4,7 +4,8 @@ Given a newly-added RegulationClause, finds every existing Clause across
 every contract already in the system that's topically related (reusing
 Phase 2's portfolio-wide vector similarity search), runs the same
 NLI-style compliance check Phase 1's Detect Agent uses, and turns any
-CONTRADICTS result into a Finding via the exact
+CONTRADICTS result — or, when NOTHING in the contract satisfies the new
+requirement, a single "gap" — into a Finding via the exact
 same finding-creation helper Detect uses (``build_finding_from_nli``) —
 so a Horizon-Scanning finding and a Detect finding are structurally
 indistinguishable in storage. Each newly-created finding fires Phase 5's
@@ -28,7 +29,7 @@ from app.agents.notifications.notify import notify_new_findings
 from app.agents.suggest.embed_clauses import backfill_all
 from app.config import settings
 from app.llm import client as llm
-from app.models.clause import Finding, NLILabel, NLIResult
+from app.models.clause import ConfidenceLevel, ExtractedClause, Finding, NLILabel, NLIResult
 
 logger = logging.getLogger("pactscan.horizon_scanning.rediff")
 
@@ -91,19 +92,22 @@ async def rediff_regulation_update(
     rule_label = f"{new_clause['regulation_name']} {new_clause['section']} (update {new_clause['effective_date']})"
     rule_id = f"horizon:{new_clause['id']}"
 
-    findings_by_contract: dict[str, list[Finding]] = {}
+    # 1) classify every related clause, grouped by contract
+    results_by_contract: dict[str, list[tuple[ExtractedClause, NLIResult, float]]] = {}
     for hit in relevant:
         clause = store.get_clause_by_id(hit["clause_id"], tenant_id=tenant_id)
         if clause is None:
             continue  # stale hit; clause was removed since the index was built
         nli = await _classify_single(clause.raw_text, new_clause["text"])
-        if nli.label != NLILabel.CONTRADICTS:
-            # ENTAILS = already compliant; NEUTRAL = the clause simply doesn't deal
-            # with this requirement's subject. Neither is a compliance problem — only
-            # a clause that itself creates one is flagged. (Flagging NEUTRAL flooded
-            # contracts with findings on clauses that were merely topically nearby.)
-            continue
-        finding = build_finding_from_nli(
+        results_by_contract.setdefault(clause.contract_id, []).append(
+            (clause, nli, hit["similarity"])
+        )
+
+    # 2) decide per contract
+    findings_by_contract: dict[str, list[Finding]] = {}
+
+    def _finding(clause: ExtractedClause, nli: NLIResult) -> Finding:
+        return build_finding_from_nli(
             contract_id=clause.contract_id,
             clause=clause,
             override_chain=[],
@@ -112,7 +116,33 @@ async def rediff_regulation_update(
             rule_label=rule_label,
             kind="regulation",
         )
-        findings_by_contract.setdefault(clause.contract_id, []).append(finding)
+
+    for contract_id, results in results_by_contract.items():
+        contradictions = [(c, n) for c, n, _ in results if n.label == NLILabel.CONTRADICTS]
+        if contradictions:
+            # a clause that itself creates the compliance problem
+            for clause, nli in contradictions:
+                findings_by_contract.setdefault(contract_id, []).append(_finding(clause, nli))
+            continue
+        if any(n.label == NLILabel.ENTAILS for _, n, _ in results):
+            continue  # something in the contract already satisfies the requirement
+        # Every related clause is NEUTRAL: the contract is silent on a new
+        # requirement. That is one finding for the CONTRACT (anchored on its
+        # most closely related clause), not one per nearby clause — flagging
+        # each topically-adjacent clause flooded contracts with findings.
+        clause, nli, _sim = max(results, key=lambda r: r[2])
+        gap = NLIResult(
+            label=NLILabel.NEUTRAL,
+            explanation=(
+                "No clause in this contract addresses this new requirement. "
+                f"The most closely related clause ({clause.section_header or clause.clause_type.value}) "
+                f"does not: {nli.explanation}"
+            ),
+            confidence=ConfidenceLevel.medium,
+        )
+        findings_by_contract.setdefault(contract_id, []).append(_finding(clause, gap))
+
+    findings_by_contract = {k: v for k, v in findings_by_contract.items() if v}
 
     contracts = {c["contract_id"]: c for c in store.list_contracts(tenant_id=tenant_id)}
     filenames = {cid: c["filename"] for cid, c in contracts.items()}

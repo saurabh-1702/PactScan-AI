@@ -614,7 +614,8 @@ class Neo4jGraphStore(GraphStore):
             MERGE (r:RegulationClause {id: rc.id})
             SET r.regulation_name = rc.regulation_name,
                 r.section = rc.section,
-                r.text = rc.text
+                r.text = rc.text,
+                r.effective_date = rc.effective_date
             """,
             clauses=clauses,
         )

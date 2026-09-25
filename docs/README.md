@@ -26,7 +26,8 @@ as an update log with an admin-only trigger, contract page, notifications).
 - Delete unsubmitted drafts, rename/delete Ask conversations, corrected dashboard counts.
 - Horizon-Scanning is idempotent through the API; version origins and "Fix approved" wording corrected.
 - Clean and redline downloads everywhere; **Re-scan latest version** on the contract page (reads the changes-accepted copy, re-checks all regulation updates, refuses while drafts/restores are pending, keeps draft history). Horizon-Scanning no longer flags NEUTRAL clauses.
-- Tests: 149 mocked pass. **Requires a dev DB reset** (`docker compose down -v`).
+- Phase 6 audited line by line against its prompt: NEUTRAL now means a per-contract gap finding, baseline regulations carry effective dates.
+- Tests: 152 mocked pass. **Requires a dev DB reset** (`docker compose down -v`).
 - Not yet merged; manual end-to-end testing (including G Horizon Scanning and H Restore) pending.
 
 **Phase 6b — realism fixes from manual testing (built on the Phase 6 branch, before Phase 7).**
