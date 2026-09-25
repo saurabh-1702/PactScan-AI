@@ -322,3 +322,24 @@ The Versions tab labelled any version with no approval as "Original upload". A r
 
 ### 14.8 — A too-clever assertion in my own end-to-end script
 The first live run "failed" at *clean copy has no old wording*. The code was right: the AI's new wording begins with the old wording, so a substring check on the old text was always true. Assert on what the thing *is* (the paragraph equals the new wording, no arrow), not on the absence of a string the result may legitimately contain.
+
+### 14.9 — The dashboard undercounted "in review" (found by the user)
+**The report:** three drafts were sent for review (two from Detect, one from Ask); "Where findings stand -> In review" showed 2.
+**Root cause, two separate things:** (1) drafts made through Ask were created with `finding_id = None`, so the dashboard — which joins findings to drafts by that id — never counted them; (2) a finding's stage came from its *newest* draft, so a newer, unsubmitted draft hid an older one that was already with a reviewer. Also: the card counts *findings*, not drafts, so two drafts on one finding are one.
+**The fix:** an Ask edit that targets a clause with exactly one finding is linked to it (with several findings on the clause it is ambiguous and stays unlinked); a finding's stage is its *furthest-advanced* draft (fix approved > in review > drafted > rejected); and the card also shows the real number of drafts with a reviewer, taken from the approvals themselves.
+**The lesson:** when a number on a screen and a number in the user's head disagree, first ask *what is being counted* (findings? drafts?) and whether every producer of the thing is actually linked in.
+
+### 14.10 — `create_all` never adds a column to a table that already exists
+Adding `redline_suggestions.original_clause_text` would have broken every existing database (500s) until someone reset it by hand, because `Base.metadata.create_all` only creates *missing tables*. There is still no migration framework, so `app/db/schema_upgrades.py` adds each new nullable column at startup if — and only if — it is missing (idempotent, tested against a table that lacks it). **Lesson:** every schema change needs an answer to "what happens to a database that already exists?", not just "does a fresh one work?".
+
+### 14.11 — A status label claimed more than the system knew ("Fixed")
+The dashboard stage "Fixed" meant *a reviewer approved a change* — nothing ever re-read the edited document, so it did not mean the problem was gone. It is now "Fix approved", the contract page says when the findings describe an older version, and a **Re-scan** exists to actually verify. **Lesson:** name a status after the event that happened, not the outcome you hope followed.
+
+### 14.12 — A helper whose name promised less than it did
+`GraphStore.wipe_contract` also deletes the `Contract` node (owner, upload date), so it could not be reused for a re-scan. A separate `reset_contract_analysis` deletes only clauses, overrides, findings and the detect-run marker. **Lesson:** before reusing a helper for a new purpose, read what it deletes.
+
+### 14.13 — Instructions I gave the user contained facts I had not checked
+Two errors in the test guide, both caught by the user actually following it: the env-var names were wrong (`GROQ_API_KEY` — the real names are `GROQ_API_KEYS` / `GEMINI_API_KEYS`), and step G.7 promised "re-running is idempotent" when it was not (see 14.5). **Lesson:** every command, name and expected result handed to a user must be checked against the code or by running it first; a guide is part of the product.
+
+### 14.14 — Real-infrastructure runs catch what mocks cannot (a summary, four times over)
+Live/real runs found: the empty vector index (13.1), the global top-K (11.2), the duplicate-filename ordering (11.3), and — this build — the Horizon over-flagging (14.7), the non-idempotent update ids (14.5) and a wrong assertion in the run itself (14.8). The mocked suite is necessary and fast, and it has repeatedly been *unable* to see these. Every substantial change should end with one run against the real stack, on throwaway data that is removed afterwards.

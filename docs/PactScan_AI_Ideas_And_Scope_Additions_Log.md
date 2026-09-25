@@ -139,3 +139,24 @@ Asked what Horizon-Scanning's "0 contracts newly flagged · re-running is idempo
 ### The user's own end-to-end scenario
 
 *"Upload contract A, detect and fix it; bring a Horizon-Scanning amendment that makes the fixed contract problematic again; re-fix it; re-check the re-fixed document through Detect to get a finally clean document."* — walked through step by step, this exposed that Horizon-Scanning and Detect could never see an edited document, and that the downloadable copy was a redline, not a clean contract. The user asked for **both** kinds of download ("clean copy and strikethrough copy") and for the re-scan to be built. Full design and safeguards: SETUP_NOTES ("Clean copy and re-scan").
+
+### Additions made during the redesign, beyond the specification
+
+These were not in the user's 30-section specification or in any phase prompt; each came from reviewing the spec against the real project, or from what testing revealed.
+- **One central permission model** (`frontend/src/lib/permissions.ts`) — role -> permissions, route rules and the nav list in a single place, driving the sidebar, the command palette, the route guard and every action button. It replaced role lists scattered across the old header, gate and pages.
+- **Who decided each approval/restore** (`decided_by_user_id` / `decided_by_email`), shown to the requester and in the queue history — a natural answer to "who reverted this, and why?".
+- **Quoted evidence on Ask answers** — each cited source carries the actual passage that was retrieved (never taken from the model's own output), so an answer shows its proof.
+- **A regulatory-update log** readable by every role, with each update's affected contracts (scoped to what the reader may see), instead of an admin-only form.
+- **A contract list and "who am I" endpoint**, feeding the dashboard, the command palette and the user menu.
+- **Real job progress** for uploads (Redis-backed, fails open) and a global "N processes running" indicator that survives navigation.
+- **Accessibility and polish the spec only gestured at:** a skip-to-content link, a visible keyboard focus ring everywhere, `prefers-reduced-motion` respected, status shown as a dot *and* a word (colour is never the only signal), and darkened text shades so body text meets WCAG AA on the warm canvas.
+- **Draft, then submit, with discard** — a fresh draft can be thrown away in place, and unsubmitted drafts can be deleted later (one, or all for one document); submitted drafts can never be deleted (they are the approval record).
+- **`backend/scripts/reset_app_data.py`** — wipes everything a user created while testing (contracts, findings, drafts, versions and files, notifications, chats, Redis state) *without* stopping any server, keeping accounts, playbook rules and baseline regulations. Runs as a dry run unless given `--yes`. Its dry run was verified against the live databases; the wipe itself has not been executed on the user's data.
+- **A startup schema upgrade** (`app/db/schema_upgrades.py`) so a new nullable column doesn't force a database reset (Known Issues 14.10).
+- **An audit trail for the new actions** — `draft_deleted`, `contract_rescan_started` / `_completed` / `_failed`, alongside the existing approval and restore events.
+
+### Decisions the user made that are worth remembering
+- **Not built, deliberately:** withdrawing a draft that is already with a reviewer — once submitted, only the reviewer decides it.
+- **Not built, deliberately (then built after all):** a "Re-scan" of an edited contract. It was first declined because *Restore* doesn't need it (restoring the original already matches the findings); the user's own lifecycle scenario (fix -> new regulation -> re-fix -> verify) then showed it was genuinely needed for a different reason, and it was built with safeguards.
+- **Both download kinds kept:** the user asked for the clean copy *and* the redline copy, not one replacing the other.
+- **Left to my judgement, stated openly:** how the dashboard should count drafts (Known Issues 14.9) — the user asked me to choose the best option and report what changed.
