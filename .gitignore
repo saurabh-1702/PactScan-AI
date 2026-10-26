@@ -39,3 +39,13 @@ Thumbs.db
 
 # ---------------- Docker ----------------
 *.pid
+
+# research harness: per-run LLM caches and offline dry runs
+research/runs/*/cache/
+research/runs/dry*/
+research/runs/law_dry*/
+research/runs/smoke*/
+research/results/smoke*
+research/results/tables/smoke*
+research/results/dry*
+research/results/tables/dry*
