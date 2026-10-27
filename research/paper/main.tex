@@ -16,6 +16,15 @@
 \AtBeginEnvironment{tabular}{\footnotesize}
 \setlength{\tabcolsep}{4pt}
 
+% Second row of author blocks.
+\makeatletter
+\newcommand{\linebreakand}{%
+  \end{@IEEEauthorhalign}
+  \hfill\mbox{}\par
+  \mbox{}\hfill\begin{@IEEEauthorhalign}
+}
+\makeatother
+
 % Text still to be filled in by the authors is printed in red.
 \newcommand{\pending}[1]{\textcolor{red}{[#1]}}
 
@@ -25,8 +34,34 @@
 
 \author{
 \IEEEauthorblockN{Saurabh Pandey}
-\IEEEauthorblockA{\pending{Department, College, City, India}\\
-saurabh.pandey2005@gmail.com}
+\IEEEauthorblockA{\textit{Dept. of Artificial Intelligence} \\
+\textit{MPSTME, SVKM's NMIMS}\\
+Mumbai, India \\
+saurabh.pandey20@nmims.in}
+\and
+\IEEEauthorblockN{Siddhant Nikam}
+\IEEEauthorblockA{\textit{Dept. of Artificial Intelligence} \\
+\textit{MPSTME, SVKM's NMIMS}\\
+Mumbai, India \\
+siddhant.nikam16@nmims.in}
+\and
+\IEEEauthorblockN{Nabiya Inamdar}
+\IEEEauthorblockA{\textit{Dept. of Artificial Intelligence} \\
+\textit{MPSTME, SVKM's NMIMS}\\
+Mumbai, India \\
+nabiya.inamdar69@nmims.in}
+\linebreakand
+\IEEEauthorblockN{Anagha Raich}
+\IEEEauthorblockA{\textit{Dept. of Artificial Intelligence} \\
+\textit{MPSTME, SVKM's NMIMS}\\
+Mumbai, India \\
+anagha.raich@nmims.edu}
+\and
+\IEEEauthorblockN{Kapil Rathor}
+\IEEEauthorblockA{\textit{Dept. of Artificial Intelligence} \\
+\textit{MPSTME, SVKM's NMIMS}\\
+Mumbai, India \\
+kapil.rathor@nmims.edu}
 }
 
 \maketitle

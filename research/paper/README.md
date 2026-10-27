@@ -1,6 +1,6 @@
 # The research paper (IEEE LaTeX)
 
-`main.tex` + `references.bib`, IEEE conference format (`IEEEtran`, two columns), 7 pages,
+`main.tex` + `references.bib`, IEEE conference format (`IEEEtran`, two columns), 8 pages, 5 authors,
 2 figures (drawn in LaTeX with TikZ/pgfplots, so there are no image files), 7 tables, 34 references.
 
 - `Silence_Is_Not_Violation.pdf`: the compiled paper (built locally with Tectonic).
@@ -18,7 +18,7 @@ Red text in the PDF marks something still to fill in.
 ## Before submitting — checklist
 
 - [x] Author name and email
-- [ ] **Department, college, city**: the one red line under your name in `main.tex`.
+- [x] Authors: all five, with department, institute and email.
 - [x] References: every arXiv entry checked against arXiv (title and authors), 2026-10-27.
 - [x] Repository URL (`saurabh-1702/PactScan-AI`, branch `research/silence-not-violation`).
       **The repository is private**: make it public on GitHub (Settings → General → Danger Zone →
