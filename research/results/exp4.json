@@ -1,0 +1,42 @@
+{
+  "benchmark_version": "1.0",
+  "runs": {},
+  "mcnemar": {},
+  "agreement": {},
+  "law": {
+    "law_main": {
+      "run_id": "law_main",
+      "pairs": 184,
+      "rules": {
+        "every_non_entails": {
+          "false_violation_rate": 1.0,
+          "missed_gap_rate": 0.0,
+          "violation_recall": 1.0,
+          "precision": 0.33695652173913043,
+          "recall": 1.0,
+          "f1": 0.5040650406504065,
+          "findings_per_check": 12.152173913043478
+        },
+        "contradicts_only": {
+          "false_violation_rate": 0.3114754098360656,
+          "missed_gap_rate": 0.9615384615384616,
+          "violation_recall": 1.0,
+          "precision": 0.24,
+          "recall": 0.1935483870967742,
+          "f1": 0.21428571428571427,
+          "findings_per_check": 0.30978260869565216
+        },
+        "contract_level": {
+          "false_violation_rate": 0.3114754098360656,
+          "missed_gap_rate": 0.0,
+          "violation_recall": 1.0,
+          "precision": 0.62,
+          "recall": 1.0,
+          "f1": 0.7654320987654321,
+          "findings_per_check": 0.5815217391304348
+        }
+      },
+      "retrieval_recall_on_violations": 1.0
+    }
+  }
+}
