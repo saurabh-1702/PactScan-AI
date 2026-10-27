@@ -64,13 +64,13 @@
 | m_qwen | A | 61.2 | 52.6 | 19.5 |
 | m_qwen | D | 14.1 | 0.0 | 54.5 |
 
-### Stability across repeats (m_gpt20b, rep20b_1, rep20b_2)
+### Stability across repeats (m_gpt20b, rep20b_1, rep20b_2, rep20b_3, rep20b_4)
 
 | Set-up | Pairs answered identically | Fleiss' kappa |
 |---|---|---|
-| A | 99.7 | 1.00 |
-| C | 92.0 | 0.89 |
-| D | 86.3 | 0.79 |
+| A | 99.3 | 0.99 |
+| C | 83.4 | 0.85 |
+| D | 78.4 | 0.79 |
 
 ### Experiment 4: re-checking contracts after a regulation update (law_main; retrieval recall on violations 100.0)
 

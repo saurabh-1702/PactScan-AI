@@ -1162,6 +1162,394 @@
           ]
         }
       }
+    },
+    "rep20b_3": {
+      "A": {
+        "n_contracts": 46,
+        "n_pairs": 584,
+        "false_violation_rate": 0.6090225563909775,
+        "fvr_covered": 0.6076923076923076,
+        "fvr_silent_ok": 1.0,
+        "fvr_trap_fix": 0.3333333333333333,
+        "missed_gap_rate": 0.5,
+        "violation_recall": 1.0,
+        "violation_recall_trap": 1.0,
+        "precision": 0.11475409836065574,
+        "recall": 0.8076923076923077,
+        "f1": 0.20095693779904306,
+        "findings_per_contract": 21.782608695652176,
+        "findings_per_clean_contract": 22.0,
+        "counts": {
+          "gap": {
+            "flagged": 10,
+            "total": 20
+          },
+          "none_covered": {
+            "flagged": 316,
+            "total": 520
+          },
+          "none_silent_ok": {
+            "flagged": 6,
+            "total": 6
+          },
+          "none_trap_fix": {
+            "flagged": 2,
+            "total": 6
+          },
+          "violates": {
+            "flagged": 26,
+            "total": 26
+          },
+          "violates_trap": {
+            "flagged": 6,
+            "total": 6
+          }
+        },
+        "ci95": {
+          "false_violation_rate": [
+            0.590316573556797,
+            0.625
+          ],
+          "missed_gap_rate": [
+            0.2777777777777778,
+            0.8235294117647058
+          ],
+          "violation_recall": [
+            1.0,
+            1.0
+          ],
+          "f1": [
+            0.145985401459854,
+            0.26004728132387706
+          ],
+          "findings_per_clean_contract": [
+            22.0,
+            22.0
+          ]
+        }
+      },
+      "C": {
+        "n_contracts": 46,
+        "n_pairs": 584,
+        "false_violation_rate": 0.45864661654135336,
+        "fvr_covered": 0.45576923076923076,
+        "fvr_silent_ok": 0.5,
+        "fvr_trap_fix": 0.6666666666666666,
+        "missed_gap_rate": 0.75,
+        "violation_recall": 0.96875,
+        "violation_recall_trap": 1.0,
+        "precision": 0.12857142857142856,
+        "recall": 0.6923076923076923,
+        "f1": 0.21686746987951805,
+        "findings_per_contract": 8.956521739130435,
+        "findings_per_clean_contract": 8.5,
+        "counts": {
+          "gap": {
+            "flagged": 5,
+            "total": 20
+          },
+          "none_covered": {
+            "flagged": 237,
+            "total": 520
+          },
+          "none_silent_ok": {
+            "flagged": 3,
+            "total": 6
+          },
+          "none_trap_fix": {
+            "flagged": 4,
+            "total": 6
+          },
+          "violates": {
+            "flagged": 25,
+            "total": 26
+          },
+          "violates_trap": {
+            "flagged": 6,
+            "total": 6
+          }
+        },
+        "ci95": {
+          "false_violation_rate": [
+            0.41064638783269963,
+            0.5045537340619308
+          ],
+          "missed_gap_rate": [
+            0.47368421052631576,
+            1.0
+          ],
+          "violation_recall": [
+            0.8947368421052632,
+            1.0
+          ],
+          "f1": [
+            0.15517241379310345,
+            0.27976190476190477
+          ],
+          "findings_per_clean_contract": [
+            4.0,
+            13.0
+          ]
+        }
+      },
+      "D": {
+        "n_contracts": 46,
+        "n_pairs": 584,
+        "false_violation_rate": 0.3082706766917293,
+        "fvr_covered": 0.3057692307692308,
+        "fvr_silent_ok": 0.16666666666666666,
+        "fvr_trap_fix": 0.6666666666666666,
+        "missed_gap_rate": 0.0,
+        "violation_recall": 1.0,
+        "violation_recall_trap": 1.0,
+        "precision": 0.24074074074074073,
+        "recall": 1.0,
+        "f1": 0.3880597014925373,
+        "findings_per_contract": 5.043478260869565,
+        "findings_per_clean_contract": 4.0,
+        "counts": {
+          "gap": {
+            "flagged": 20,
+            "total": 20
+          },
+          "none_covered": {
+            "flagged": 159,
+            "total": 520
+          },
+          "none_silent_ok": {
+            "flagged": 1,
+            "total": 6
+          },
+          "none_trap_fix": {
+            "flagged": 4,
+            "total": 6
+          },
+          "violates": {
+            "flagged": 26,
+            "total": 26
+          },
+          "violates_trap": {
+            "flagged": 6,
+            "total": 6
+          }
+        },
+        "ci95": {
+          "false_violation_rate": [
+            0.2825278810408922,
+            0.3339622641509434
+          ],
+          "missed_gap_rate": [
+            0.0,
+            0.0
+          ],
+          "violation_recall": [
+            1.0,
+            1.0
+          ],
+          "f1": [
+            0.3241106719367589,
+            0.4525547445255474
+          ],
+          "findings_per_clean_contract": [
+            3.0,
+            5.0
+          ]
+        }
+      }
+    },
+    "rep20b_4": {
+      "A": {
+        "n_contracts": 46,
+        "n_pairs": 584,
+        "false_violation_rate": 0.6109022556390977,
+        "fvr_covered": 0.6096153846153847,
+        "fvr_silent_ok": 1.0,
+        "fvr_trap_fix": 0.3333333333333333,
+        "missed_gap_rate": 0.5,
+        "violation_recall": 1.0,
+        "violation_recall_trap": 1.0,
+        "precision": 0.11444141689373297,
+        "recall": 0.8076923076923077,
+        "f1": 0.20047732696897375,
+        "findings_per_contract": 24.565217391304348,
+        "findings_per_clean_contract": 25.0,
+        "counts": {
+          "gap": {
+            "flagged": 10,
+            "total": 20
+          },
+          "none_covered": {
+            "flagged": 317,
+            "total": 520
+          },
+          "none_silent_ok": {
+            "flagged": 6,
+            "total": 6
+          },
+          "none_trap_fix": {
+            "flagged": 2,
+            "total": 6
+          },
+          "violates": {
+            "flagged": 26,
+            "total": 26
+          },
+          "violates_trap": {
+            "flagged": 6,
+            "total": 6
+          }
+        },
+        "ci95": {
+          "false_violation_rate": [
+            0.5929549902152642,
+            0.6261510128913443
+          ],
+          "missed_gap_rate": [
+            0.2777777777777778,
+            0.8235294117647058
+          ],
+          "violation_recall": [
+            1.0,
+            1.0
+          ],
+          "f1": [
+            0.145985401459854,
+            0.2583732057416268
+          ],
+          "findings_per_clean_contract": [
+            25.0,
+            25.0
+          ]
+        }
+      },
+      "C": {
+        "n_contracts": 46,
+        "n_pairs": 584,
+        "false_violation_rate": 0.5545112781954887,
+        "fvr_covered": 0.5557692307692308,
+        "fvr_silent_ok": 0.6666666666666666,
+        "fvr_trap_fix": 0.3333333333333333,
+        "missed_gap_rate": 0.6,
+        "violation_recall": 0.96875,
+        "violation_recall_trap": 0.8333333333333334,
+        "precision": 0.11676646706586827,
+        "recall": 0.75,
+        "f1": 0.20207253886010365,
+        "findings_per_contract": 9.826086956521738,
+        "findings_per_clean_contract": 9.5,
+        "counts": {
+          "gap": {
+            "flagged": 8,
+            "total": 20
+          },
+          "none_covered": {
+            "flagged": 289,
+            "total": 520
+          },
+          "none_silent_ok": {
+            "flagged": 4,
+            "total": 6
+          },
+          "none_trap_fix": {
+            "flagged": 2,
+            "total": 6
+          },
+          "violates": {
+            "flagged": 26,
+            "total": 26
+          },
+          "violates_trap": {
+            "flagged": 5,
+            "total": 6
+          }
+        },
+        "ci95": {
+          "false_violation_rate": [
+            0.5220588235294118,
+            0.5825771324863884
+          ],
+          "missed_gap_rate": [
+            0.3333333333333333,
+            0.9444444444444444
+          ],
+          "violation_recall": [
+            0.896551724137931,
+            1.0
+          ],
+          "f1": [
+            0.1409921671018277,
+            0.2639593908629441
+          ],
+          "findings_per_clean_contract": [
+            8.0,
+            11.0
+          ]
+        }
+      },
+      "D": {
+        "n_contracts": 46,
+        "n_pairs": 584,
+        "false_violation_rate": 0.2593984962406015,
+        "fvr_covered": 0.25769230769230766,
+        "fvr_silent_ok": 0.3333333333333333,
+        "fvr_trap_fix": 0.3333333333333333,
+        "missed_gap_rate": 0.0,
+        "violation_recall": 0.96875,
+        "violation_recall_trap": 0.8333333333333334,
+        "precision": 0.2698412698412698,
+        "recall": 0.9807692307692307,
+        "f1": 0.4232365145228215,
+        "findings_per_contract": 4.913043478260869,
+        "findings_per_clean_contract": 4.0,
+        "counts": {
+          "gap": {
+            "flagged": 20,
+            "total": 20
+          },
+          "none_covered": {
+            "flagged": 134,
+            "total": 520
+          },
+          "none_silent_ok": {
+            "flagged": 2,
+            "total": 6
+          },
+          "none_trap_fix": {
+            "flagged": 2,
+            "total": 6
+          },
+          "violates": {
+            "flagged": 26,
+            "total": 26
+          },
+          "violates_trap": {
+            "flagged": 5,
+            "total": 6
+          }
+        },
+        "ci95": {
+          "false_violation_rate": [
+            0.24125230202578268,
+            0.27695167286245354
+          ],
+          "missed_gap_rate": [
+            0.0,
+            0.0
+          ],
+          "violation_recall": [
+            0.896551724137931,
+            1.0
+          ],
+          "f1": [
+            0.3577981651376147,
+            0.4862745098039215
+          ],
+          "findings_per_clean_contract": [
+            4.0,
+            4.0
+          ]
+        }
+      }
     }
   },
   "mcnemar": {
@@ -1244,6 +1632,30 @@
         "y_only_correct": 173,
         "p_value": 1.6704779438076297e-52
       }
+    },
+    "rep20b_3": {
+      "A_vs_D": {
+        "x_only_correct": 2,
+        "y_only_correct": 172,
+        "p_value": 1.2717348586207898e-48
+      },
+      "C_vs_D": {
+        "x_only_correct": 0,
+        "y_only_correct": 96,
+        "p_value": 2.5243548967072524e-29
+      }
+    },
+    "rep20b_4": {
+      "A_vs_D": {
+        "x_only_correct": 1,
+        "y_only_correct": 197,
+        "p_value": 9.907040322355143e-58
+      },
+      "C_vs_D": {
+        "x_only_correct": 0,
+        "y_only_correct": 169,
+        "p_value": 2.672764710092189e-51
+      }
     }
   },
   "agreement": {
@@ -1278,26 +1690,28 @@
       "runs": [
         "m_gpt20b",
         "rep20b_1",
-        "rep20b_2"
+        "rep20b_2",
+        "rep20b_3",
+        "rep20b_4"
       ],
       "configs": {
         "A": {
-          "runs": 3,
+          "runs": 5,
           "pairs": 584,
-          "all_agree_pct": 0.9965753424657534,
-          "fleiss_kappa": 0.99513527246778
+          "all_agree_pct": 0.9931506849315068,
+          "fleiss_kappa": 0.9934222514121638
         },
         "C": {
-          "runs": 3,
+          "runs": 5,
           "pairs": 584,
-          "all_agree_pct": 0.9195205479452054,
-          "fleiss_kappa": 0.8911897585386254
+          "all_agree_pct": 0.833904109589041,
+          "fleiss_kappa": 0.8501261405991093
         },
         "D": {
-          "runs": 3,
+          "runs": 5,
           "pairs": 584,
-          "all_agree_pct": 0.863013698630137,
-          "fleiss_kappa": 0.7894278223898197
+          "all_agree_pct": 0.7842465753424658,
+          "fleiss_kappa": 0.7868438879674883
         }
       }
     }
@@ -1341,25 +1755,11 @@
   "diagnostics": {
     "main": {
       "verdict_labels": {
-        "A_original": {
-          "n": 4512,
-          "CONTRADICTS": 0.6502659574468085,
-          "ENTAILS": 0.3091755319148936,
-          "NEUTRAL-high": 0.006427304964539007,
-          "NEUTRAL-medium": 0.034131205673758866
-        },
         "C_noET": {
           "n": 3300,
           "CONTRADICTS": 0.10151515151515152,
           "ENTAILS": 0.4033333333333333,
           "NEUTRAL-high": 0.42515151515151517,
-          "NEUTRAL-medium": 0.07
-        },
-        "C_routing": {
-          "n": 3300,
-          "CONTRADICTS": 0.1009090909090909,
-          "ENTAILS": 0.4033333333333333,
-          "NEUTRAL-high": 0.4257575757575758,
           "NEUTRAL-medium": 0.07
         },
         "B_prompt": {
@@ -1368,6 +1768,20 @@
           "ENTAILS": 0.28191489361702127,
           "NEUTRAL-high": 0.5879875886524822,
           "NEUTRAL-medium": 0.056072695035460994
+        },
+        "A_original": {
+          "n": 4512,
+          "CONTRADICTS": 0.6502659574468085,
+          "ENTAILS": 0.3091755319148936,
+          "NEUTRAL-high": 0.006427304964539007,
+          "NEUTRAL-medium": 0.034131205673758866
+        },
+        "C_routing": {
+          "n": 3300,
+          "CONTRADICTS": 0.1009090909090909,
+          "ENTAILS": 0.4033333333333333,
+          "NEUTRAL-high": 0.4257575757575758,
+          "NEUTRAL-medium": 0.07
         }
       },
       "false_alarm_by_requirement": {
@@ -2674,13 +3088,461 @@
         "no_clause_on_subject": 12,
         "from_model_verdicts": 8
       }
+    },
+    "rep20b_3": {
+      "verdict_labels": {
+        "A_original": {
+          "n": 1504,
+          "CONTRADICTS": 0.6655585106382979,
+          "ENTAILS": 0.3337765957446808,
+          "NEUTRAL-high": 0.0006648936170212766
+        },
+        "C_routing": {
+          "n": 1100,
+          "CONTRADICTS": 0.17272727272727273,
+          "ENTAILS": 0.3572727272727273,
+          "NEUTRAL-high": 0.2018181818181818,
+          "NEUTRAL-medium": 0.2681818181818182
+        }
+      },
+      "false_alarm_by_requirement": {
+        "A": {
+          "dpdp_s4": {
+            "flagged": 42,
+            "total": 42,
+            "rate": 1.0
+          },
+          "dpdp_s8": {
+            "flagged": 36,
+            "total": 36,
+            "rate": 1.0
+          },
+          "dpdp_s9": {
+            "flagged": 42,
+            "total": 42,
+            "rate": 1.0
+          },
+          "gdpr_art6": {
+            "flagged": 40,
+            "total": 42,
+            "rate": 0.9523809523809523
+          },
+          "gdpr_art8": {
+            "flagged": 42,
+            "total": 42,
+            "rate": 1.0
+          },
+          "pb_audit_rights": {
+            "flagged": 0,
+            "total": 42,
+            "rate": 0.0
+          },
+          "pb_breach_notification_window": {
+            "flagged": 0,
+            "total": 40,
+            "rate": 0.0
+          },
+          "pb_data_localization_transfer": {
+            "flagged": 0,
+            "total": 42,
+            "rate": 0.0
+          },
+          "pb_deletion_return_on_termination": {
+            "flagged": 0,
+            "total": 40,
+            "rate": 0.0
+          },
+          "pb_liability_cap_data_breach": {
+            "flagged": 44,
+            "total": 44,
+            "rate": 1.0
+          },
+          "pb_mandatory_dpa_fields": {
+            "flagged": 36,
+            "total": 36,
+            "rate": 1.0
+          },
+          "pb_subprocessor_approval": {
+            "flagged": 0,
+            "total": 42,
+            "rate": 0.0
+          },
+          "pb_verifiable_parental_consent": {
+            "flagged": 42,
+            "total": 42,
+            "rate": 1.0
+          }
+        },
+        "C": {
+          "dpdp_s4": {
+            "flagged": 41,
+            "total": 42,
+            "rate": 0.9761904761904762
+          },
+          "dpdp_s8": {
+            "flagged": 36,
+            "total": 36,
+            "rate": 1.0
+          },
+          "dpdp_s9": {
+            "flagged": 23,
+            "total": 42,
+            "rate": 0.5476190476190477
+          },
+          "gdpr_art6": {
+            "flagged": 21,
+            "total": 42,
+            "rate": 0.5
+          },
+          "gdpr_art8": {
+            "flagged": 42,
+            "total": 42,
+            "rate": 1.0
+          },
+          "pb_audit_rights": {
+            "flagged": 0,
+            "total": 42,
+            "rate": 0.0
+          },
+          "pb_breach_notification_window": {
+            "flagged": 0,
+            "total": 40,
+            "rate": 0.0
+          },
+          "pb_data_localization_transfer": {
+            "flagged": 0,
+            "total": 42,
+            "rate": 0.0
+          },
+          "pb_deletion_return_on_termination": {
+            "flagged": 2,
+            "total": 40,
+            "rate": 0.05
+          },
+          "pb_liability_cap_data_breach": {
+            "flagged": 21,
+            "total": 44,
+            "rate": 0.4772727272727273
+          },
+          "pb_mandatory_dpa_fields": {
+            "flagged": 35,
+            "total": 36,
+            "rate": 0.9722222222222222
+          },
+          "pb_subprocessor_approval": {
+            "flagged": 0,
+            "total": 42,
+            "rate": 0.0
+          },
+          "pb_verifiable_parental_consent": {
+            "flagged": 23,
+            "total": 42,
+            "rate": 0.5476190476190477
+          }
+        },
+        "D": {
+          "dpdp_s4": {
+            "flagged": 40,
+            "total": 42,
+            "rate": 0.9523809523809523
+          },
+          "dpdp_s8": {
+            "flagged": 36,
+            "total": 36,
+            "rate": 1.0
+          },
+          "dpdp_s9": {
+            "flagged": 2,
+            "total": 42,
+            "rate": 0.047619047619047616
+          },
+          "gdpr_art6": {
+            "flagged": 1,
+            "total": 42,
+            "rate": 0.023809523809523808
+          },
+          "gdpr_art8": {
+            "flagged": 42,
+            "total": 42,
+            "rate": 1.0
+          },
+          "pb_audit_rights": {
+            "flagged": 0,
+            "total": 42,
+            "rate": 0.0
+          },
+          "pb_breach_notification_window": {
+            "flagged": 0,
+            "total": 40,
+            "rate": 0.0
+          },
+          "pb_data_localization_transfer": {
+            "flagged": 0,
+            "total": 42,
+            "rate": 0.0
+          },
+          "pb_deletion_return_on_termination": {
+            "flagged": 2,
+            "total": 40,
+            "rate": 0.05
+          },
+          "pb_liability_cap_data_breach": {
+            "flagged": 21,
+            "total": 44,
+            "rate": 0.4772727272727273
+          },
+          "pb_mandatory_dpa_fields": {
+            "flagged": 18,
+            "total": 36,
+            "rate": 0.5
+          },
+          "pb_subprocessor_approval": {
+            "flagged": 0,
+            "total": 42,
+            "rate": 0.0
+          },
+          "pb_verifiable_parental_consent": {
+            "flagged": 2,
+            "total": 42,
+            "rate": 0.047619047619047616
+          }
+        }
+      },
+      "gap_provenance": {
+        "no_clause_on_subject": 12,
+        "from_model_verdicts": 8
+      }
+    },
+    "rep20b_4": {
+      "verdict_labels": {
+        "A_original": {
+          "n": 1504,
+          "CONTRADICTS": 0.7513297872340425,
+          "ENTAILS": 0.24867021276595744
+        },
+        "C_routing": {
+          "n": 1100,
+          "CONTRADICTS": 0.18545454545454546,
+          "ENTAILS": 0.3981818181818182,
+          "NEUTRAL-high": 0.22545454545454546,
+          "NEUTRAL-low": 0.09545454545454546,
+          "NEUTRAL-medium": 0.09545454545454546
+        }
+      },
+      "false_alarm_by_requirement": {
+        "A": {
+          "dpdp_s4": {
+            "flagged": 42,
+            "total": 42,
+            "rate": 1.0
+          },
+          "dpdp_s8": {
+            "flagged": 36,
+            "total": 36,
+            "rate": 1.0
+          },
+          "dpdp_s9": {
+            "flagged": 42,
+            "total": 42,
+            "rate": 1.0
+          },
+          "gdpr_art6": {
+            "flagged": 41,
+            "total": 42,
+            "rate": 0.9761904761904762
+          },
+          "gdpr_art8": {
+            "flagged": 42,
+            "total": 42,
+            "rate": 1.0
+          },
+          "pb_audit_rights": {
+            "flagged": 0,
+            "total": 42,
+            "rate": 0.0
+          },
+          "pb_breach_notification_window": {
+            "flagged": 0,
+            "total": 40,
+            "rate": 0.0
+          },
+          "pb_data_localization_transfer": {
+            "flagged": 0,
+            "total": 42,
+            "rate": 0.0
+          },
+          "pb_deletion_return_on_termination": {
+            "flagged": 0,
+            "total": 40,
+            "rate": 0.0
+          },
+          "pb_liability_cap_data_breach": {
+            "flagged": 44,
+            "total": 44,
+            "rate": 1.0
+          },
+          "pb_mandatory_dpa_fields": {
+            "flagged": 36,
+            "total": 36,
+            "rate": 1.0
+          },
+          "pb_subprocessor_approval": {
+            "flagged": 0,
+            "total": 42,
+            "rate": 0.0
+          },
+          "pb_verifiable_parental_consent": {
+            "flagged": 42,
+            "total": 42,
+            "rate": 1.0
+          }
+        },
+        "C": {
+          "dpdp_s4": {
+            "flagged": 42,
+            "total": 42,
+            "rate": 1.0
+          },
+          "dpdp_s8": {
+            "flagged": 36,
+            "total": 36,
+            "rate": 1.0
+          },
+          "dpdp_s9": {
+            "flagged": 40,
+            "total": 42,
+            "rate": 0.9523809523809523
+          },
+          "gdpr_art6": {
+            "flagged": 40,
+            "total": 42,
+            "rate": 0.9523809523809523
+          },
+          "gdpr_art8": {
+            "flagged": 41,
+            "total": 42,
+            "rate": 0.9761904761904762
+          },
+          "pb_audit_rights": {
+            "flagged": 0,
+            "total": 42,
+            "rate": 0.0
+          },
+          "pb_breach_notification_window": {
+            "flagged": 0,
+            "total": 40,
+            "rate": 0.0
+          },
+          "pb_data_localization_transfer": {
+            "flagged": 0,
+            "total": 42,
+            "rate": 0.0
+          },
+          "pb_deletion_return_on_termination": {
+            "flagged": 0,
+            "total": 40,
+            "rate": 0.0
+          },
+          "pb_liability_cap_data_breach": {
+            "flagged": 21,
+            "total": 44,
+            "rate": 0.4772727272727273
+          },
+          "pb_mandatory_dpa_fields": {
+            "flagged": 35,
+            "total": 36,
+            "rate": 0.9722222222222222
+          },
+          "pb_subprocessor_approval": {
+            "flagged": 0,
+            "total": 42,
+            "rate": 0.0
+          },
+          "pb_verifiable_parental_consent": {
+            "flagged": 40,
+            "total": 42,
+            "rate": 0.9523809523809523
+          }
+        },
+        "D": {
+          "dpdp_s4": {
+            "flagged": 21,
+            "total": 42,
+            "rate": 0.5
+          },
+          "dpdp_s8": {
+            "flagged": 36,
+            "total": 36,
+            "rate": 1.0
+          },
+          "dpdp_s9": {
+            "flagged": 1,
+            "total": 42,
+            "rate": 0.023809523809523808
+          },
+          "gdpr_art6": {
+            "flagged": 19,
+            "total": 42,
+            "rate": 0.4523809523809524
+          },
+          "gdpr_art8": {
+            "flagged": 21,
+            "total": 42,
+            "rate": 0.5
+          },
+          "pb_audit_rights": {
+            "flagged": 0,
+            "total": 42,
+            "rate": 0.0
+          },
+          "pb_breach_notification_window": {
+            "flagged": 0,
+            "total": 40,
+            "rate": 0.0
+          },
+          "pb_data_localization_transfer": {
+            "flagged": 0,
+            "total": 42,
+            "rate": 0.0
+          },
+          "pb_deletion_return_on_termination": {
+            "flagged": 0,
+            "total": 40,
+            "rate": 0.0
+          },
+          "pb_liability_cap_data_breach": {
+            "flagged": 21,
+            "total": 44,
+            "rate": 0.4772727272727273
+          },
+          "pb_mandatory_dpa_fields": {
+            "flagged": 18,
+            "total": 36,
+            "rate": 0.5
+          },
+          "pb_subprocessor_approval": {
+            "flagged": 0,
+            "total": 42,
+            "rate": 0.0
+          },
+          "pb_verifiable_parental_consent": {
+            "flagged": 1,
+            "total": 42,
+            "rate": 0.023809523809523808
+          }
+        }
+      },
+      "gap_provenance": {
+        "no_clause_on_subject": 12,
+        "from_model_verdicts": 8
+      }
     }
   },
   "sign_test": {
     "comparison": "D below A",
-    "units": 30,
-    "wins": 22,
-    "p_value": 0.016124801710247993,
+    "units": 42,
+    "wins": 26,
+    "p_value": 0.16414940178310644,
     "per_unit": [
       {
         "run": "main",
@@ -2858,6 +3720,78 @@
       },
       {
         "run": "rep20b_2",
+        "base": "b6",
+        "fvr_A": 0.0,
+        "fvr_D": 0.0
+      },
+      {
+        "run": "rep20b_3",
+        "base": "b1",
+        "fvr_A": 0.6090225563909775,
+        "fvr_D": 0.38345864661654133
+      },
+      {
+        "run": "rep20b_3",
+        "base": "b2",
+        "fvr_A": 0.6090225563909775,
+        "fvr_D": 0.23308270676691728
+      },
+      {
+        "run": "rep20b_3",
+        "base": "b3",
+        "fvr_A": 0.0,
+        "fvr_D": 0.0
+      },
+      {
+        "run": "rep20b_3",
+        "base": "b4",
+        "fvr_A": 0.0,
+        "fvr_D": 0.0
+      },
+      {
+        "run": "rep20b_3",
+        "base": "b5",
+        "fvr_A": 0.0,
+        "fvr_D": 0.0
+      },
+      {
+        "run": "rep20b_3",
+        "base": "b6",
+        "fvr_A": 0.0,
+        "fvr_D": 0.0
+      },
+      {
+        "run": "rep20b_4",
+        "base": "b1",
+        "fvr_A": 0.6127819548872181,
+        "fvr_D": 0.3007518796992481
+      },
+      {
+        "run": "rep20b_4",
+        "base": "b2",
+        "fvr_A": 0.6090225563909775,
+        "fvr_D": 0.21804511278195488
+      },
+      {
+        "run": "rep20b_4",
+        "base": "b3",
+        "fvr_A": 0.0,
+        "fvr_D": 0.0
+      },
+      {
+        "run": "rep20b_4",
+        "base": "b4",
+        "fvr_A": 0.0,
+        "fvr_D": 0.0
+      },
+      {
+        "run": "rep20b_4",
+        "base": "b5",
+        "fvr_A": 0.0,
+        "fvr_D": 0.0
+      },
+      {
+        "run": "rep20b_4",
         "base": "b6",
         "fvr_A": 0.0,
         "fvr_D": 0.0

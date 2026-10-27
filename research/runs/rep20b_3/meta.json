@@ -1,0 +1,18 @@
+{
+  "run_id": "rep20b_3",
+  "model": "groq/openai/gpt-oss-20b",
+  "fake": false,
+  "started": "2026-10-27T14:46:08+00:00",
+  "families": [
+    "A_original",
+    "C_routing"
+  ],
+  "deployed": false,
+  "bases": "b1,b2",
+  "n_contracts": 46,
+  "benchmark_version": "1.0",
+  "git_commit": "2e61e1f",
+  "llm_prompt_version": "v3",
+  "temperature": "0.2 (Groq call site in app/llm/client.py); provider default for Gemini",
+  "python": "3.14.5"
+}
