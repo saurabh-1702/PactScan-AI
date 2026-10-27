@@ -39,7 +39,7 @@ import sys
 import time
 from datetime import datetime, timezone
 
-from common import RUNS_DIR, REPO_DIR, append_jsonl, install_fake_llm, load_benchmark, pin_model, read_jsonl, use_backend_env, write_json
+from common import RUNS_DIR, repair_jsonl, REPO_DIR, append_jsonl, install_fake_llm, load_benchmark, pin_model, read_jsonl, use_backend_env, write_json
 
 MAX_QUOTA_WAITS = 15  # consecutive waits on an exhausted model before stopping (resume later)
 
@@ -194,6 +194,7 @@ async def main_async(args) -> None:
     bm = load_benchmark()
     run_dir = RUNS_DIR / args.run_id
     out = run_dir / "verdicts.jsonl"
+    repair_jsonl(out)
     families = [f for f in args.families.split(",") if f] if args.families else list(FAMILIES)
     unknown = [f for f in families if f not in FAMILIES]
     if unknown:

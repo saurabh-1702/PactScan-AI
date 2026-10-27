@@ -27,7 +27,7 @@ import argparse
 import asyncio
 import time
 
-from common import RUNS_DIR, append_jsonl, install_fake_llm, load_benchmark, pin_model, read_jsonl, use_backend_env, write_json
+from common import RUNS_DIR, repair_jsonl, append_jsonl, install_fake_llm, load_benchmark, pin_model, read_jsonl, use_backend_env, write_json
 from run_verdicts import _now, _with_quota_retry, load_contract
 
 
@@ -40,6 +40,7 @@ async def main_async(args) -> None:
     bm = load_benchmark()
     run_dir = RUNS_DIR / args.run_id
     out = run_dir / "law_verdicts.jsonl"
+    repair_jsonl(out)
 
     if args.fake:
         install_fake_llm()

@@ -55,11 +55,30 @@ def read_jsonl(path: Path) -> list[dict]:
         return []
     rows = []
     with path.open(encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
-            if line:
-                rows.append(json.loads(line))
+        lines = [ln.strip() for ln in fh if ln.strip()]
+    for i, line in enumerate(lines):
+        try:
+            rows.append(json.loads(line))
+        except json.JSONDecodeError:
+            # only the LAST line can be half-written (the process was killed
+            # mid-write); anywhere else it is real damage and must not be hidden
+            if i != len(lines) - 1:
+                raise
+            print(f"warning: ignoring a half-written last line in {path.name}")
     return rows
+
+
+def repair_jsonl(path: Path) -> None:
+    """Before resuming, drop a half-written last line left by a killed process,
+    so the next row isn't glued onto it."""
+    if not path.exists():
+        return
+    data = path.read_bytes()
+    if not data or data.endswith(b"\n"):
+        return
+    cut = data.rfind(b"\n") + 1
+    path.write_bytes(data[:cut])
+    print(f"Removed a half-written last line from {path.name} (the job it belonged to will be redone).")
 
 
 def append_jsonl(path: Path, row: dict) -> None:

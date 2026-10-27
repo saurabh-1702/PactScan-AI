@@ -45,16 +45,22 @@ def load_run(run_id: str) -> dict:
     rows = read_jsonl(RUNS_DIR / run_id / "verdicts.jsonl")
     if not rows:
         raise SystemExit(f"No verdicts found for run {run_id!r} (research/runs/{run_id}/verdicts.jsonl).")
-    verdicts: dict[tuple[str, str], dict[str, list[dict]]] = defaultdict(lambda: defaultdict(list))
+    # A job interrupted part-way (e.g. the machine shut down) is redone in full
+    # on resume, so some (clause, requirement) verdicts can be saved twice. Keep
+    # one per clause — the latest — so nothing is counted twice.
+    latest: dict[tuple[str, str, str, str], dict] = {}
     done: dict[str, set[str]] = defaultdict(set)
     deployed: dict[str, list[dict]] = {}
     for r in rows:
         if r["type"] == "verdict":
-            verdicts[(r["family"], r["contract_id"])][r["requirement_id"]].append(r)
+            latest[(r["family"], r["contract_id"], r["clause_id"], r["requirement_id"])] = r
         elif r["type"] == "done":
             done[r["family"]].add(r["contract_id"])
         elif r["type"] == "deployed":
             deployed[r["contract_id"]] = r["findings"]
+    verdicts: dict[tuple[str, str], dict[str, list[dict]]] = defaultdict(lambda: defaultdict(list))
+    for (family, cid, _clause, rid), r in latest.items():
+        verdicts[(family, cid)][rid].append(r)
     return {"run_id": run_id, "verdicts": verdicts, "done": done, "deployed": deployed}
 
 
@@ -236,6 +242,52 @@ def agreement(preds: list[dict], bm: dict, contract_ids: list[str]) -> dict:
     return {"runs": m, "pairs": n, "all_agree_pct": same / n, "fleiss_kappa": kappa}
 
 
+def diagnostics(run: dict, preds: dict[str, dict], bm: dict) -> dict:
+    """Where the numbers come from, for the paper's analysis section:
+      * how each family's raw verdicts split across labels (does the prompt
+        actually change what the model says?)
+      * each set-up's false-alarm rate per requirement (which rules drive the
+        remaining errors?)
+      * how the full method's GAP calls were made — no clause on the subject
+        at all (decided without the model) vs. from the model's verdicts."""
+    from configs import CONFIGS
+
+    contracts = {c["contract_id"]: c for c in bm["contracts"]}
+    out: dict = {"verdict_labels": {}, "false_alarm_by_requirement": {}, "gap_provenance": {}}
+    for fam in {cfg["family"] for cfg in CONFIGS.values() if cfg["family"]}:
+        cnt: dict[str, int] = defaultdict(int)
+        for (f, _cid), per in run["verdicts"].items():
+            if f != fam:
+                continue
+            for vs in per.values():
+                for v in vs:
+                    key = v["label"] + (f"-{v['confidence']}" if v["label"] == "NEUTRAL" else "")
+                    cnt[key] += 1
+        if cnt:
+            total = sum(cnt.values())
+            out["verdict_labels"][fam] = {"n": total, **{k: n / total for k, n in sorted(cnt.items())}}
+    for cfg, pred in preds.items():
+        flagged: dict[str, list[int]] = defaultdict(lambda: [0, 0])
+        for (cid, rid), n in pred.items():
+            if contracts[cid]["gold"][rid] == "NONE":
+                flagged[rid][0] += n > 0
+                flagged[rid][1] += 1
+        out["false_alarm_by_requirement"][cfg] = {
+            rid: {"flagged": f, "total": t, "rate": f / t} for rid, (f, t) in sorted(flagged.items())
+        }
+    fam = CONFIGS["D"]["family"]
+    no_clause = from_model = 0
+    for cid in run["done"].get(fam, set()):
+        for rid, gold in contracts[cid]["gold"].items():
+            if gold == "GAP":
+                if run["verdicts"].get((fam, cid), {}).get(rid):
+                    from_model += 1
+                else:
+                    no_clause += 1
+    out["gap_provenance"] = {"no_clause_on_subject": no_clause, "from_model_verdicts": from_model}
+    return out
+
+
 # --------------------------------------------------------------------------- #
 # Experiment 4 — regulation updates
 # --------------------------------------------------------------------------- #
@@ -324,6 +376,7 @@ def main() -> None:
                 common = sorted({c for c, _ in preds[x]} & {c for c, _ in preds[y]})
                 tests[f"{x}_vs_{y}"] = mcnemar(preds[x], preds[y], bm, common, cats)
         report["mcnemar"][run_id] = tests
+        report.setdefault("diagnostics", {})[run_id] = diagnostics(run, preds, bm)
 
     for label, ids in (("models", args.compare_runs), ("repeats", args.repeat_runs)):
         ids = [r for r in ids.split(",") if r]
