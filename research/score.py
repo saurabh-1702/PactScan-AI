@@ -242,6 +242,31 @@ def agreement(preds: list[dict], bm: dict, contract_ids: list[str]) -> dict:
     return {"runs": m, "pairs": n, "all_agree_pct": same / n, "fleiss_kappa": kappa}
 
 
+def per_base_sign_test(runs: list[dict], bm: dict, x: str = "A", y: str = "D") -> dict:
+    """The conservative check. Contracts built from the same base share 12 of
+    their 13 clauses, and within a run an identical question is answered once,
+    so pairs from one base are NOT independent and the pair-level McNemar test
+    and contract-level bootstrap overstate certainty. Here each (base, model)
+    is ONE unit: does set-up y have a lower false-violation rate than x on it?
+    Exact two-sided sign test over those units."""
+    bases = sorted({c["base"] for c in bm["contracts"]})
+    units, wins, rows = 0, 0, []
+    for run in runs:
+        if x not in available_configs(run) or y not in available_configs(run):
+            continue
+        px, py = predictions(run, x, bm), predictions(run, y, bm)
+        for b in bases:
+            ids = [c["contract_id"] for c in bm["contracts"] if c["base"] == b]
+            fx = metrics(px, bm, ids)["false_violation_rate"]
+            fy = metrics(py, bm, ids)["false_violation_rate"]
+            rows.append({"run": run["run_id"], "base": b, f"fvr_{x}": fx, f"fvr_{y}": fy})
+            units += 1
+            wins += fy < fx
+    k = min(wins, units - wins)
+    p = min(1.0, 2 * sum(math.comb(units, i) for i in range(k + 1)) / 2**units) if units else None
+    return {"comparison": f"{y} below {x}", "units": units, "wins": wins, "p_value": p, "per_unit": rows}
+
+
 def diagnostics(run: dict, preds: dict[str, dict], bm: dict) -> dict:
     """Where the numbers come from, for the paper's analysis section:
       * how each family's raw verdicts split across labels (does the prompt
@@ -377,6 +402,10 @@ def main() -> None:
                 tests[f"{x}_vs_{y}"] = mcnemar(preds[x], preds[y], bm, common, cats)
         report["mcnemar"][run_id] = tests
         report.setdefault("diagnostics", {})[run_id] = diagnostics(run, preds, bm)
+
+    scored = [load_run(r) for r in [r for r in args.runs.split(",") if r]]
+    if scored:
+        report["sign_test"] = per_base_sign_test(scored, bm)
 
     for label, ids in (("models", args.compare_runs), ("repeats", args.repeat_runs)):
         ids = [r for r in ids.split(",") if r]

@@ -1,0 +1,17 @@
+{
+  "run_id": "law_main",
+  "experiment": "law_updates",
+  "model": "groq/openai/gpt-oss-120b",
+  "fake": false,
+  "started": "2026-10-27T09:46:59+00:00",
+  "updates": [
+    "u1_breach_72h",
+    "u2_erasure_30d",
+    "u3_transfer_whitelist",
+    "u4_grievance_contact"
+  ],
+  "bases": "b1,b2",
+  "top_k": 15,
+  "similarity_threshold": 0.35,
+  "embedding_model": "gemini-embedding-001"
+}
