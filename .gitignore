@@ -50,3 +50,4 @@ research/results/tables/smoke*
 research/results/dry*
 research/results/tables/dry*
 research/*.log
+research/paper/build/

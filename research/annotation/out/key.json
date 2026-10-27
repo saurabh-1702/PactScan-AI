@@ -1,0 +1,482 @@
+{
+ "Q001": {
+  "contract_id": "b1_trap_violation_breach_notification",
+  "requirement_id": "pb_breach_notification_window"
+ },
+ "Q002": {
+  "contract_id": "b4_silent_breach_notification",
+  "requirement_id": "dpdp_s8"
+ },
+ "Q003": {
+  "contract_id": "b1_breaks_dpa_fields",
+  "requirement_id": "pb_mandatory_dpa_fields"
+ },
+ "Q004": {
+  "contract_id": "b4_breaks_breach_notification",
+  "requirement_id": "dpdp_s9"
+ },
+ "Q005": {
+  "contract_id": "b3_breaks_audit",
+  "requirement_id": "pb_audit_rights"
+ },
+ "Q006": {
+  "contract_id": "b4_breaks_lawful_basis",
+  "requirement_id": "gdpr_art6"
+ },
+ "Q007": {
+  "contract_id": "b1_breaks_subprocessors",
+  "requirement_id": "dpdp_s9"
+ },
+ "Q008": {
+  "contract_id": "b5_breaks_dpa_fields",
+  "requirement_id": "pb_breach_notification_window"
+ },
+ "Q009": {
+  "contract_id": "b4_silent_children_data",
+  "requirement_id": "gdpr_art8"
+ },
+ "Q010": {
+  "contract_id": "b4_silent_liability_cap",
+  "requirement_id": "gdpr_art8"
+ },
+ "Q011": {
+  "contract_id": "b6_silent_audit",
+  "requirement_id": "pb_audit_rights"
+ },
+ "Q012": {
+  "contract_id": "b3_breaks_children_data",
+  "requirement_id": "dpdp_s9"
+ },
+ "Q013": {
+  "contract_id": "b4_breaks_dpa_fields",
+  "requirement_id": "dpdp_s8"
+ },
+ "Q014": {
+  "contract_id": "b4_breaks_breach_notification",
+  "requirement_id": "dpdp_s4"
+ },
+ "Q015": {
+  "contract_id": "b4_breaks_liability_cap",
+  "requirement_id": "dpdp_s9"
+ },
+ "Q016": {
+  "contract_id": "b5_breaks_dpa_fields",
+  "requirement_id": "dpdp_s8"
+ },
+ "Q017": {
+  "contract_id": "b3_breaks_children_data",
+  "requirement_id": "pb_verifiable_parental_consent"
+ },
+ "Q018": {
+  "contract_id": "b2_silent_children_data",
+  "requirement_id": "gdpr_art8"
+ },
+ "Q019": {
+  "contract_id": "b1_silent_deletion",
+  "requirement_id": "pb_mandatory_dpa_fields"
+ },
+ "Q020": {
+  "contract_id": "b4_breaks_dpa_fields",
+  "requirement_id": "pb_mandatory_dpa_fields"
+ },
+ "Q021": {
+  "contract_id": "b6_breaks_audit",
+  "requirement_id": "pb_audit_rights"
+ },
+ "Q022": {
+  "contract_id": "b5_trap_violation_deletion",
+  "requirement_id": "pb_verifiable_parental_consent"
+ },
+ "Q023": {
+  "contract_id": "b1_breaks_cross_border",
+  "requirement_id": "pb_data_localization_transfer"
+ },
+ "Q024": {
+  "contract_id": "b5_breaks_breach_notification",
+  "requirement_id": "dpdp_s8"
+ },
+ "Q025": {
+  "contract_id": "b6_silent_children_data",
+  "requirement_id": "gdpr_art8"
+ },
+ "Q026": {
+  "contract_id": "b5_breaks_audit",
+  "requirement_id": "pb_audit_rights"
+ },
+ "Q027": {
+  "contract_id": "b5_silent_subprocessors",
+  "requirement_id": "pb_subprocessor_approval"
+ },
+ "Q028": {
+  "contract_id": "b5_trap_fix_deletion",
+  "requirement_id": "gdpr_art8"
+ },
+ "Q029": {
+  "contract_id": "b1_breaks_breach_notification",
+  "requirement_id": "pb_mandatory_dpa_fields"
+ },
+ "Q030": {
+  "contract_id": "b2_silent_lawful_basis",
+  "requirement_id": "pb_data_localization_transfer"
+ },
+ "Q031": {
+  "contract_id": "b4_silent_audit",
+  "requirement_id": "dpdp_s8"
+ },
+ "Q032": {
+  "contract_id": "b6_silent_breach_notification",
+  "requirement_id": "gdpr_art6"
+ },
+ "Q033": {
+  "contract_id": "b1_silent_deletion",
+  "requirement_id": "pb_deletion_return_on_termination"
+ },
+ "Q034": {
+  "contract_id": "b1_base",
+  "requirement_id": "dpdp_s4"
+ },
+ "Q035": {
+  "contract_id": "b3_breaks_lawful_basis",
+  "requirement_id": "dpdp_s4"
+ },
+ "Q036": {
+  "contract_id": "b2_breaks_breach_notification",
+  "requirement_id": "pb_subprocessor_approval"
+ },
+ "Q037": {
+  "contract_id": "b1_breaks_deletion",
+  "requirement_id": "dpdp_s4"
+ },
+ "Q038": {
+  "contract_id": "b2_silent_cross_border",
+  "requirement_id": "pb_data_localization_transfer"
+ },
+ "Q039": {
+  "contract_id": "b6_base",
+  "requirement_id": "dpdp_s9"
+ },
+ "Q040": {
+  "contract_id": "b6_trap_fix_deletion",
+  "requirement_id": "pb_audit_rights"
+ },
+ "Q041": {
+  "contract_id": "b1_silent_subprocessors",
+  "requirement_id": "pb_subprocessor_approval"
+ },
+ "Q042": {
+  "contract_id": "b1_silent_cross_border",
+  "requirement_id": "pb_mandatory_dpa_fields"
+ },
+ "Q043": {
+  "contract_id": "b5_breaks_lawful_basis",
+  "requirement_id": "pb_liability_cap_data_breach"
+ },
+ "Q044": {
+  "contract_id": "b4_silent_lawful_basis",
+  "requirement_id": "dpdp_s4"
+ },
+ "Q045": {
+  "contract_id": "b4_trap_violation_deletion",
+  "requirement_id": "dpdp_s8"
+ },
+ "Q046": {
+  "contract_id": "b4_trap_violation_deletion",
+  "requirement_id": "pb_breach_notification_window"
+ },
+ "Q047": {
+  "contract_id": "b4_trap_fix_deletion",
+  "requirement_id": "gdpr_art6"
+ },
+ "Q048": {
+  "contract_id": "b4_breaks_children_data",
+  "requirement_id": "pb_verifiable_parental_consent"
+ },
+ "Q049": {
+  "contract_id": "b1_silent_children_data",
+  "requirement_id": "pb_verifiable_parental_consent"
+ },
+ "Q050": {
+  "contract_id": "b2_silent_breach_notification",
+  "requirement_id": "dpdp_s8"
+ },
+ "Q051": {
+  "contract_id": "b6_breaks_children_data",
+  "requirement_id": "gdpr_art8"
+ },
+ "Q052": {
+  "contract_id": "b5_silent_breach_notification",
+  "requirement_id": "pb_breach_notification_window"
+ },
+ "Q053": {
+  "contract_id": "b1_breaks_breach_notification",
+  "requirement_id": "dpdp_s8"
+ },
+ "Q054": {
+  "contract_id": "b3_silent_deletion",
+  "requirement_id": "pb_deletion_return_on_termination"
+ },
+ "Q055": {
+  "contract_id": "b5_breaks_cross_border",
+  "requirement_id": "pb_data_localization_transfer"
+ },
+ "Q056": {
+  "contract_id": "b2_breaks_liability_cap",
+  "requirement_id": "pb_subprocessor_approval"
+ },
+ "Q057": {
+  "contract_id": "b1_breaks_deletion",
+  "requirement_id": "pb_deletion_return_on_termination"
+ },
+ "Q058": {
+  "contract_id": "b3_silent_deletion",
+  "requirement_id": "pb_audit_rights"
+ },
+ "Q059": {
+  "contract_id": "b3_breaks_subprocessors",
+  "requirement_id": "pb_subprocessor_approval"
+ },
+ "Q060": {
+  "contract_id": "b5_silent_breach_notification",
+  "requirement_id": "pb_deletion_return_on_termination"
+ },
+ "Q061": {
+  "contract_id": "b1_silent_cross_border",
+  "requirement_id": "pb_data_localization_transfer"
+ },
+ "Q062": {
+  "contract_id": "b3_breaks_cross_border",
+  "requirement_id": "pb_data_localization_transfer"
+ },
+ "Q063": {
+  "contract_id": "b2_trap_violation_breach_notification",
+  "requirement_id": "pb_breach_notification_window"
+ },
+ "Q064": {
+  "contract_id": "b2_breaks_breach_notification",
+  "requirement_id": "pb_verifiable_parental_consent"
+ },
+ "Q065": {
+  "contract_id": "b1_breaks_cross_border",
+  "requirement_id": "pb_breach_notification_window"
+ },
+ "Q066": {
+  "contract_id": "b5_trap_violation_breach_notification",
+  "requirement_id": "pb_data_localization_transfer"
+ },
+ "Q067": {
+  "contract_id": "b4_breaks_children_data",
+  "requirement_id": "dpdp_s9"
+ },
+ "Q068": {
+  "contract_id": "b3_breaks_liability_cap",
+  "requirement_id": "pb_liability_cap_data_breach"
+ },
+ "Q069": {
+  "contract_id": "b6_base",
+  "requirement_id": "pb_deletion_return_on_termination"
+ },
+ "Q070": {
+  "contract_id": "b5_trap_fix_breach_notification",
+  "requirement_id": "pb_verifiable_parental_consent"
+ },
+ "Q071": {
+  "contract_id": "b4_breaks_breach_notification",
+  "requirement_id": "gdpr_art8"
+ },
+ "Q072": {
+  "contract_id": "b1_breaks_lawful_basis",
+  "requirement_id": "dpdp_s4"
+ },
+ "Q073": {
+  "contract_id": "b2_silent_children_data",
+  "requirement_id": "dpdp_s4"
+ },
+ "Q074": {
+  "contract_id": "b1_silent_subprocessors",
+  "requirement_id": "pb_mandatory_dpa_fields"
+ },
+ "Q075": {
+  "contract_id": "b6_silent_deletion",
+  "requirement_id": "pb_subprocessor_approval"
+ },
+ "Q076": {
+  "contract_id": "b3_silent_subprocessors",
+  "requirement_id": "pb_subprocessor_approval"
+ },
+ "Q077": {
+  "contract_id": "b1_breaks_subprocessors",
+  "requirement_id": "pb_subprocessor_approval"
+ },
+ "Q078": {
+  "contract_id": "b1_breaks_deletion",
+  "requirement_id": "pb_breach_notification_window"
+ },
+ "Q079": {
+  "contract_id": "b2_silent_dpa_fields",
+  "requirement_id": "pb_mandatory_dpa_fields"
+ },
+ "Q080": {
+  "contract_id": "b3_breaks_breach_notification",
+  "requirement_id": "pb_breach_notification_window"
+ },
+ "Q081": {
+  "contract_id": "b2_silent_children_data",
+  "requirement_id": "pb_verifiable_parental_consent"
+ },
+ "Q082": {
+  "contract_id": "b2_silent_liability_cap",
+  "requirement_id": "pb_breach_notification_window"
+ },
+ "Q083": {
+  "contract_id": "b5_silent_subprocessors",
+  "requirement_id": "pb_mandatory_dpa_fields"
+ },
+ "Q084": {
+  "contract_id": "b1_breaks_children_data",
+  "requirement_id": "gdpr_art8"
+ },
+ "Q085": {
+  "contract_id": "b2_breaks_deletion",
+  "requirement_id": "pb_deletion_return_on_termination"
+ },
+ "Q086": {
+  "contract_id": "b2_breaks_lawful_basis",
+  "requirement_id": "pb_data_localization_transfer"
+ },
+ "Q087": {
+  "contract_id": "b1_breaks_breach_notification",
+  "requirement_id": "pb_breach_notification_window"
+ },
+ "Q088": {
+  "contract_id": "b1_silent_breach_notification",
+  "requirement_id": "pb_breach_notification_window"
+ },
+ "Q089": {
+  "contract_id": "b1_silent_liability_cap",
+  "requirement_id": "pb_deletion_return_on_termination"
+ },
+ "Q090": {
+  "contract_id": "b4_breaks_breach_notification",
+  "requirement_id": "pb_breach_notification_window"
+ },
+ "Q091": {
+  "contract_id": "b6_breaks_cross_border",
+  "requirement_id": "pb_data_localization_transfer"
+ },
+ "Q092": {
+  "contract_id": "b3_silent_children_data",
+  "requirement_id": "gdpr_art8"
+ },
+ "Q093": {
+  "contract_id": "b5_breaks_deletion",
+  "requirement_id": "pb_audit_rights"
+ },
+ "Q094": {
+  "contract_id": "b4_breaks_lawful_basis",
+  "requirement_id": "dpdp_s4"
+ },
+ "Q095": {
+  "contract_id": "b4_breaks_cross_border",
+  "requirement_id": "pb_mandatory_dpa_fields"
+ },
+ "Q096": {
+  "contract_id": "b3_silent_subprocessors",
+  "requirement_id": "gdpr_art6"
+ },
+ "Q097": {
+  "contract_id": "b2_trap_fix_breach_notification",
+  "requirement_id": "pb_breach_notification_window"
+ },
+ "Q098": {
+  "contract_id": "b3_breaks_liability_cap",
+  "requirement_id": "pb_deletion_return_on_termination"
+ },
+ "Q099": {
+  "contract_id": "b2_breaks_audit",
+  "requirement_id": "pb_audit_rights"
+ },
+ "Q100": {
+  "contract_id": "b5_silent_deletion",
+  "requirement_id": "pb_deletion_return_on_termination"
+ },
+ "Q101": {
+  "contract_id": "b5_silent_cross_border",
+  "requirement_id": "dpdp_s4"
+ },
+ "Q102": {
+  "contract_id": "b1_breaks_breach_notification",
+  "requirement_id": "gdpr_art8"
+ },
+ "Q103": {
+  "contract_id": "b3_silent_dpa_fields",
+  "requirement_id": "pb_breach_notification_window"
+ },
+ "Q104": {
+  "contract_id": "b5_breaks_deletion",
+  "requirement_id": "dpdp_s8"
+ },
+ "Q105": {
+  "contract_id": "b5_silent_dpa_fields",
+  "requirement_id": "pb_verifiable_parental_consent"
+ },
+ "Q106": {
+  "contract_id": "b5_breaks_liability_cap",
+  "requirement_id": "pb_data_localization_transfer"
+ },
+ "Q107": {
+  "contract_id": "b2_silent_lawful_basis",
+  "requirement_id": "dpdp_s9"
+ },
+ "Q108": {
+  "contract_id": "b4_breaks_breach_notification",
+  "requirement_id": "dpdp_s8"
+ },
+ "Q109": {
+  "contract_id": "b4_breaks_liability_cap",
+  "requirement_id": "pb_liability_cap_data_breach"
+ },
+ "Q110": {
+  "contract_id": "b2_breaks_lawful_basis",
+  "requirement_id": "dpdp_s4"
+ },
+ "Q111": {
+  "contract_id": "b4_silent_dpa_fields",
+  "requirement_id": "pb_mandatory_dpa_fields"
+ },
+ "Q112": {
+  "contract_id": "b4_trap_violation_breach_notification",
+  "requirement_id": "dpdp_s9"
+ },
+ "Q113": {
+  "contract_id": "b4_silent_breach_notification",
+  "requirement_id": "pb_liability_cap_data_breach"
+ },
+ "Q114": {
+  "contract_id": "b6_breaks_cross_border",
+  "requirement_id": "pb_audit_rights"
+ },
+ "Q115": {
+  "contract_id": "b4_breaks_children_data",
+  "requirement_id": "pb_breach_notification_window"
+ },
+ "Q116": {
+  "contract_id": "b3_silent_children_data",
+  "requirement_id": "dpdp_s9"
+ },
+ "Q117": {
+  "contract_id": "b5_breaks_children_data",
+  "requirement_id": "pb_audit_rights"
+ },
+ "Q118": {
+  "contract_id": "b1_breaks_liability_cap",
+  "requirement_id": "pb_liability_cap_data_breach"
+ },
+ "Q119": {
+  "contract_id": "b3_silent_audit",
+  "requirement_id": "pb_audit_rights"
+ },
+ "Q120": {
+  "contract_id": "b6_silent_cross_border",
+  "requirement_id": "pb_data_localization_transfer"
+ }
+}

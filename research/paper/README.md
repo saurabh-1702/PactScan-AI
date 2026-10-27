@@ -1,22 +1,30 @@
 # The research paper (IEEE LaTeX)
 
-`main.tex` + `references.bib`, IEEE conference format (`IEEEtran`, two columns).
+`main.tex` + `references.bib`, IEEE conference format (`IEEEtran`, two columns), 7 pages,
+2 figures (drawn in LaTeX with TikZ/pgfplots, so there are no image files), 7 tables, 34 references.
 
-## Turn it into a PDF (no install needed)
+- `Silence_Is_Not_Violation.pdf`: the compiled paper (built locally with Tectonic).
+- `overleaf_upload.zip`: `main.tex` + `references.bib`, ready to upload to Overleaf.
+
+## Edit or recompile on Overleaf
 
 1. Go to <https://www.overleaf.com> and sign in (free).
-2. **New Project → Upload Project**, and upload a `.zip` containing `main.tex` and `references.bib`
-   (or create a blank project and upload the two files).
-3. Overleaf compiles it automatically with pdfLaTeX — `IEEEtran` and every package used are built in.
-4. **Download PDF** (or the source as a zip) when done.
+2. **New Project → Upload Project**, and upload `overleaf_upload.zip`.
+3. Overleaf compiles it with pdfLaTeX; `IEEEtran`, TikZ and pgfplots are all built in.
+4. **Download PDF** when done.
 
 Red text in the PDF marks something still to fill in.
 
 ## Before submitting — checklist
 
-- [ ] **Authors**: replace the red author/department/email lines at the top of `main.tex`.
-- [ ] **References marked `VERIFY`** in `references.bib`: confirm author lists / exact titles on arXiv or Google Scholar.
-- [ ] **Repository URL** in "Data and Code Availability" (or delete that sentence).
+- [x] Author name and email
+- [ ] **Department, college, city**: the one red line under your name in `main.tex`.
+- [x] References: every arXiv entry checked against arXiv (title and authors), 2026-10-27.
+- [x] Repository URL (`saurabh-1702/PactScan-AI`, branch `research/silence-not-violation`).
+      **The repository is private**: make it public on GitHub (Settings → General → Danger Zone →
+      Change visibility), or reviewers won't be able to open the link.
+- [ ] Second annotator (optional, recommended): see `research/annotation/README.md`. When it's
+      done, put the kappa in the "Labels" paragraph of Threats to Validity.
 - [ ] Your college's specific template, if different from plain IEEE conference format.
 - [ ] Read it once end to end: every number in it comes from `research/results/*.json`.
 
