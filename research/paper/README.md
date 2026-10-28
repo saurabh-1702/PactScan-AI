@@ -1,7 +1,9 @@
 # The research paper (IEEE LaTeX)
 
-`main.tex` + `references.bib`, IEEE conference format (`IEEEtran`, two columns), 8 pages, 5 authors,
-2 figures (drawn in LaTeX with TikZ/pgfplots, so there are no image files), 7 tables, 34 references.
+`main.tex` + `references.bib`, IEEE conference format (`IEEEtran`, two columns), 6 pages, 5 authors,
+1 figure (drawn in LaTeX with TikZ, so there are no image files), 3 tables, 30 references.
+Fitted to the ICIP guidelines: 4–6 pages, abstract under 400 words (280), 6 keywords, corresponding
+author marked (Saurabh Pandey). The longer 8-page version is at commit `58b2db7`.
 
 - `Silence_Is_Not_Violation.pdf`: the compiled paper (built locally with Tectonic).
 - `overleaf_upload.zip`: `main.tex` + `references.bib`, ready to upload to Overleaf.

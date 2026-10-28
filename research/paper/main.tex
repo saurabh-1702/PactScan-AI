@@ -33,7 +33,7 @@
 \title{Silence Is Not Violation: Measuring and Reducing False Violation Errors in LLM Compliance Checking of Vendor Data Processing Agreements under India's DPDP Act}
 
 \author{
-\IEEEauthorblockN{Saurabh Pandey}
+\IEEEauthorblockN{Saurabh Pandey\textsuperscript{*}}
 \IEEEauthorblockA{\textit{Dept. of Artificial Intelligence} \\
 \textit{MPSTME, SVKM's NMIMS}\\
 Mumbai, India \\
@@ -62,16 +62,17 @@ anagha.raich@nmims.edu}
 \textit{MPSTME, SVKM's NMIMS}\\
 Mumbai, India \\
 kapil.rathor@nmims.edu}
+\thanks{\textsuperscript{*}Corresponding author.}
 }
 
 \maketitle
 
 \begin{abstract}
-Large language models (LLMs) are increasingly used to check commercial contracts against regulations. We identify and measure a specific, recurring failure: a checker that judges each clause in isolation reports a contract's \emph{silence} on a requirement as a \emph{violation} of it. We observed this failure while building PactScan, an LLM- and knowledge-graph-based compliance system for vendor Data Processing Agreements (DPAs) under India's Digital Personal Data Protection (DPDP) Act, 2023, where a fully compliant contract received 19 findings. We release a minimal-pair benchmark of 138 synthetic DPAs (1,752 graded contract--requirement pairs) in which each contract follows, omits or breaks exactly one obligation, including ``trap'' contracts whose amendments hide or cure a violation. We compare the original clause-level checker with a method that (i) instructs the model that silence is neutral, (ii) checks each requirement only against clauses on its subject, (iii) reads each clause together with the provisions that override it, and (iv) decides at the level of the whole contract. On gpt-oss-120b the false violation rate falls from 60.9\% to 19.6\% while no mandatory gap is missed and 99\% of violations are still caught; the same pattern holds on gpt-oss-20b (60.8\%$\to$27.1\%) and qwen3.8-27b (61.2\%$\to$14.1\%), and in all 18 of 18 company$\times$model units (sign test $p=7.6\times10^{-6}$), and it holds in each of five independent runs. An ablation shows that the prompt alone barely helps: it shifts the model's verdicts from ``contradicts'' (65\%) to ``neutral'' (64\%), but a clause-level decision rule still turns those neutral verdicts into findings. The fix therefore comes from the decision unit rather than from the prompt. The same holds when existing contracts are re-checked against new regulations: flagging every non-entailing clause flags 100\% of compliant contracts, flagging only contradictions misses 96\% of gaps, and the contract-level rule misses none (F1 76.5\%). Residual false alarms concentrate on compound requirements that bundle several duties into one rule.
+Large language models (LLMs) are increasingly used to check commercial contracts against regulations. We identify and measure a recurring failure in which a checker that judges each clause in isolation reports a contract's \emph{silence} on a requirement as a \emph{violation} of it. We observed this failure while building PactScan, an LLM- and knowledge-graph-based compliance system for vendor Data Processing Agreements (DPAs) under India's Digital Personal Data Protection (DPDP) Act, 2023, where a fully compliant contract received 19 findings. We release a minimal-pair benchmark of 138 synthetic DPAs (1,752 graded contract--requirement pairs) in which each contract follows, omits or breaks exactly one obligation, including ``trap'' contracts whose amendments hide or cure a violation. We compare the original clause-level checker with a method that (i) instructs the model that silence is neutral, (ii) checks each requirement only against clauses on its subject, (iii) reads each clause together with the provisions that override it, and (iv) decides at the level of the whole contract. On gpt-oss-120b the false violation rate falls from 60.9\% to 19.6\% while no mandatory gap is missed and 99\% of violations are still caught. The same pattern holds on gpt-oss-20b (60.8\%$\to$27.1\%) and qwen3.8-27b (61.2\%$\to$14.1\%), in all 18 of 18 company$\times$model units (sign test $p=7.6\times10^{-6}$) and in each of five independent runs. An ablation shows that the prompt alone barely helps, because a clause-level decision rule still turns the model's neutral verdicts into findings, so the fix comes from the decision unit rather than from the prompt. When existing contracts are re-checked against new regulations, the contract-level rule also misses no gap (F1 76.5\%). Residual false alarms concentrate on compound requirements that bundle several duties into one rule.
 \end{abstract}
 
 \begin{IEEEkeywords}
-legal NLP, contract compliance, large language models, natural language inference, data protection, DPDP Act, GDPR, benchmark
+large language models, legal NLP, contract compliance, natural language inference, DPDP Act, benchmark
 \end{IEEEkeywords}
 
 % =====================================================================
@@ -79,46 +80,30 @@ legal NLP, contract compliance, large language models, natural language inferenc
 
 Companies sign Data Processing Agreements (DPAs) with every vendor that handles personal data on their behalf, and India's Digital Personal Data Protection (DPDP) Act, 2023~\cite{dpdp2023} makes the company (the \emph{Data Fiduciary}) accountable for what its vendors (\emph{Data Processors}) do. Reviewing a portfolio of such contracts against the Act, an internal playbook and, for many firms, the EU GDPR~\cite{gdpr2016} is slow and repetitive, which makes it an obvious target for automation with large language models (LLMs).
 
-A natural design, and the one from which most systems start, is to split the contract into clauses and ask a model, for every clause and every relevant requirement, whether the clause \emph{entails}, \emph{contradicts} or is \emph{neutral} to it, in the style of contract natural language inference~\cite{koreeda2021contractnli}. This paper is about a failure of that design that is easy to miss and expensive in practice: a clause that simply does not deal with a requirement is reported as violating it. For example, a cross-border-transfer clause is flagged for not restating breach-notification duties, and a confidentiality clause for never mentioning children's data. Each alarm can be defended in isolation (``this clause does not secure X''), but it is wrong for the contract as a whole, because another clause secures X.
+A natural design, and the one from which most systems start, is to split the contract into clauses and ask a model, for every clause and every relevant requirement, whether the clause \emph{entails}, \emph{contradicts} or is \emph{neutral} to it, in the style of contract natural language inference~\cite{koreeda2021contractnli}. This paper studies a failure of that design that is easy to miss and expensive in practice, in which a clause that simply does not deal with a requirement is reported as violating it. For example, a cross-border-transfer clause is flagged for not restating breach-notification duties, and a confidentiality clause for never mentioning children's data. Each alarm can be defended in isolation (``this clause does not secure X''), but it is wrong for the contract as a whole, because another clause secures X.
 
-We first encountered this failure during the development of \emph{PactScan}, a working compliance platform that parses vendor DPAs into a Neo4j knowledge graph and then checks them with an LLM. Its first version raised 19 findings on a contract that we had written to be fully compliant. Later, a regulation-update feature produced 9 and then 13 findings for a single amendment on a two-page contract. A first fix, which reported only explicit contradictions, stopped the flood but also hid a real problem, namely a contract that never mentions a newly mandatory protection. These incidents, recorded in the project's development log, motivate the study.
+We first encountered this failure during the development of \emph{PactScan}, a working compliance platform that parses vendor DPAs into a Neo4j knowledge graph and then checks them with an LLM. Its first version raised 19 findings on a contract that we had written to be fully compliant. Later, a regulation-update feature produced 9 and then 13 findings for one amendment on a two-page contract, and a first fix that reported only explicit contradictions hid contracts that never mention a newly mandatory protection.
 
-\textbf{Contributions.}
-\begin{enumerate}
-\item We characterise the \emph{silence-as-violation} error and its opposite failure, the \emph{missed gap}, and define a pair of metrics that measure both.
-\item We release a minimal-pair benchmark of 138 synthetic vendor DPAs under the DPDP Act (with GDPR as a second standard): 1,752 graded contract--requirement pairs, including trap contracts in which an amendment hides or cures a violation. To our knowledge it is the first compliance benchmark for DPDP contracts.
-\item We evaluate a four-part method (a conservative prompt, subject routing, override-aware reading and a contract-level decision rule) through a step-by-step ablation on three open models, using conservative statistics.
-\item We show that the decisive component is the \emph{unit of decision}, not the prompt, and that residual errors concentrate on \emph{compound} requirements, which suggests a concrete next step.
-\end{enumerate}
+\textbf{Contributions.} (1) We characterise the \emph{silence-as-violation} error and its opposite failure, the \emph{missed gap}, and define a pair of metrics that measure both. (2) We release a minimal-pair benchmark of 138 synthetic vendor DPAs under the DPDP Act, with GDPR as a second standard, containing 1,752 graded contract--requirement pairs and trap contracts in which an amendment hides or cures a violation. To our knowledge it is the first compliance benchmark for DPDP contracts. (3) We evaluate a four-part method through a step-by-step ablation on three open models, using conservative statistics. (4) We show that the decisive component is the \emph{unit of decision}, not the prompt, and that residual errors concentrate on \emph{compound} requirements.
 
 % =====================================================================
 \section{Related Work}
 
-\textbf{Contract understanding and NLI.} CUAD~\cite{hendrycks2021cuad} provides expert clause annotations for 510 contracts; we use its category names as a taxonomy reference only. ContractNLI~\cite{koreeda2021contractnli} treats contract review as document-level NLI~\cite{bowman2015snli} and includes an explicit \emph{NotMentioned} label. This is the same three-way distinction on which our metrics rely, and in contracts it plays the role that unanswerable questions play in reading comprehension~\cite{rajpurkar2018squad2}. Legal-understanding tasks are collected in LexGLUE~\cite{chalkidis2022lexglue} and LegalBench~\cite{guha2023legalbench}, while CLAUDETTE~\cite{lippi2019claudette} detects potentially unfair clauses in terms of service and Polisis~\cite{harkous2018polisis} classifies privacy-policy text. CLAUSE~\cite{clause2026} introduces ten categories of embedded flaws into CUAD and ContractNLI contracts and reports that LLMs often miss subtle discrepancies and have difficulty justifying them in legal terms. Our benchmark is different in jurisdiction (DPDP) and document type (vendor DPAs), and also in purpose, since we built it to separate silence from violation in matched pairs and not to detect flaws in general.
+\textbf{Contract understanding and NLI.} CUAD~\cite{hendrycks2021cuad} provides expert clause annotations for 510 contracts, and we use its category names only as a taxonomy reference. ContractNLI~\cite{koreeda2021contractnli} treats contract review as document-level NLI with an explicit \emph{NotMentioned} label, which plays the role that unanswerable questions play in reading comprehension~\cite{rajpurkar2018squad2}; our metrics rely on the same three-way distinction. LexGLUE~\cite{chalkidis2022lexglue} and LegalBench~\cite{guha2023legalbench} collect legal-understanding tasks, CLAUDETTE~\cite{lippi2019claudette} detects unfair terms of service and Polisis~\cite{harkous2018polisis} classifies privacy-policy text. CLAUSE~\cite{clause2026} embeds ten categories of flaws in CUAD and ContractNLI contracts and reports that LLMs often miss subtle discrepancies. Our benchmark differs in jurisdiction, document type and purpose, since it separates silence from violation through small, controlled edits whose correct effect is known beforehand, as in CheckList~\cite{ribeiro2020checklist} and contrast sets~\cite{gardner2020contrast}.
 
-\textbf{Compliance checking of DPAs.} Amaral et al.~\cite{amaral2023dpa} and Azeem and Abualhaija~\cite{azeem2024completeness} check GDPR DPAs for completeness with NLP and machine learning, and Hassani et al.~\cite{hassani2024rethinking} argue that LLM-based compliance analysis should use a broader context than the single sentence. These works establish that completeness (what is missing) is a distinct question from conformity (what is wrong); we study what happens when a checker conflates the two. Work on the DPDP Act so far checks website privacy policies against the Act with access-control rules~\cite{dhakar2026apliance} or embeds DPDP compliance logic in software agents~\cite{kulkarni2026dpdp}; we found no study of compliance checking for DPDP \emph{contracts}.
-
-\textbf{Reliability of LLM legal and compliance verdicts.} LLMs hallucinate on legal questions at substantial rates~\cite{dahl2024fictions}, including in commercial legal research tools built on retrieval~\cite{magesh2024hallucination,lewis2020rag}. For compliance specifically, verdicts are often invariant when the governing rule is deleted, swapped or negated~\cite{verdictwithoutrule2026}, and recent pipelines use NLI only as a screening step before verification by a panel of LLM judges~\cite{privacywashing2026}. Regulatory-change monitoring with knowledge-graph-augmented gap detection has been studied for financial institutions' policies~\cite{compliancenlp2026}. Our study complements this work, since we keep the rule fixed and vary \emph{how verdicts are turned into findings}.
-
-\textbf{Minimal pairs.} In designing the benchmark we follow the logic of behavioural testing with CheckList~\cite{ribeiro2020checklist} and contrast sets~\cite{gardner2020contrast}, which rely on small, controlled edits whose correct effect on the output is known beforehand.
+\textbf{Compliance checking.} Amaral et al.~\cite{amaral2023dpa} and Azeem and Abualhaija~\cite{azeem2024completeness} check GDPR DPAs for completeness, and Hassani et al.~\cite{hassani2024rethinking} argue that LLM-based compliance analysis needs more context than a single sentence. They treat completeness (what is missing) and conformity (what is wrong) as separate questions, which a clause-level checker conflates. Work on the DPDP Act checks website privacy policies with access-control rules~\cite{dhakar2026apliance} or embeds compliance logic in software agents~\cite{kulkarni2026dpdp}, and we found no study of DPDP \emph{contracts}. LLMs hallucinate on legal questions~\cite{dahl2024fictions}, also inside retrieval-based legal research tools~\cite{magesh2024hallucination}. Compliance verdicts are often unchanged when the governing rule is deleted, swapped or negated~\cite{verdictwithoutrule2026}, some pipelines use NLI only as a screening step before a panel of LLM judges~\cite{privacywashing2026}, and knowledge-graph-augmented gap detection has been studied for financial institutions' policies~\cite{compliancenlp2026}. Our study complements this work, since we keep the rule fixed and vary \emph{how verdicts are turned into findings}.
 
 % =====================================================================
 \section{The System and the Problem}
 
 \subsection{PactScan's Detect pipeline}
-PactScan parses an uploaded contract, extracts clauses with an LLM into a fixed taxonomy (e.g.\ \textsc{Breach Notification}, \textsc{Data Processing}, \textsc{Sub-processor Obligations}), and writes them into a Neo4j knowledge graph used for graph-based retrieval~\cite{edge2024graphrag}. When a clause contains override language (``notwithstanding'', ``supersedes''), an LLM confirms whether it changes another clause, and an \textsc{Overrides} edge is stored. Detect then checks each clause against the requirements relevant to its type: 8 internal playbook rules and 5 regulation clauses (DPDP Sections 4, 8 and 9; GDPR Articles 6 and 8). Each check is a single batched structured-output call that returns, for every requirement, an \textsc{Entails}/\textsc{Contradicts}/\textsc{Neutral} label together with a confidence and an explanation. The findings then go to human-approved redlining, a later stage that this paper does not touch.
+PactScan parses an uploaded contract, extracts clauses with an LLM into a fixed taxonomy (e.g.\ \textsc{Breach Notification}, \textsc{Data Processing}) and writes them into a Neo4j knowledge graph. When a clause contains override language (``notwithstanding'', ``supersedes''), an LLM confirms whether it changes another clause, and an \textsc{Overrides} edge is stored. Detect then checks each clause against the requirements relevant to its type, namely 8 internal playbook rules and 5 regulation clauses (DPDP Sections 4, 8 and 9; GDPR Articles 6 and 8). Each check is a single batched structured-output call that returns, for every requirement, an \textsc{Entails}/\textsc{Contradicts}/\textsc{Neutral} label together with a confidence and an explanation. The findings then go to human-approved redlining, which this paper does not touch.
 
 \subsection{Three outcomes, two errors}
-For a contract $c$ and requirement $r$, the correct outcome is one of:
-\begin{itemize}
-\item \textbf{NONE}: nothing is wrong, either because some clause satisfies $r$ or because $r$ does not bind $c$;
-\item \textbf{VIOLATES}: a clause goes against $r$;
-\item \textbf{GAP}: $r$ is mandatory and nothing in $c$ addresses it.
-\end{itemize}
-A checker \emph{flags} $(c,r)$ if it produces at least one finding for $r$ in $c$. The \textbf{false violation rate} (FVR) is the share of NONE pairs that are flagged. This is the error that the paper addresses. The \textbf{missed gap rate} (MGR) is the share of GAP pairs that are \emph{not} flagged, which is the kind of error an over-cautious fix creates. We also report violation recall (share of VIOLATES pairs flagged) and precision, recall and F1 over all problems (VIOLATES $\cup$ GAP).
+For a contract $c$ and requirement $r$, the correct outcome is \textbf{NONE} when nothing is wrong (some clause satisfies $r$, or $r$ does not bind $c$), \textbf{VIOLATES} when a clause goes against $r$, and \textbf{GAP} when $r$ is mandatory and nothing in $c$ addresses it. A checker \emph{flags} $(c,r)$ if it produces at least one finding for $r$ in $c$. The \textbf{false violation rate} (FVR) is the share of NONE pairs that are flagged, and it is the error that the paper addresses. The \textbf{missed gap rate} (MGR) is the share of GAP pairs that are \emph{not} flagged, which is the kind of error an over-cautious fix creates. We also report violation recall (share of VIOLATES pairs flagged) and precision, recall and F1 over all problems (VIOLATES $\cup$ GAP).
 
 \subsection{How the problem appeared}
-The original Detect prompt (preserved in the project's history) instructed the model that ``a clause that is vague or silent on a specific mandatory protection \dots\ CONTRADICTS the requirement rather than being NEUTRAL'', and the decision rule turned every contradiction, and every neutral verdict given with high confidence, into a finding. The first live run produced 19 findings on the clean contract. The prompt was rewritten (``merely silent on an adjacent obligation is NEUTRAL, never CONTRADICTS''), routing was narrowed, and a cross-clause check suppressed a children's-data gap when another clause covered it. Months later the regulation-update feature, which re-checks existing contracts against a newly added rule, flagged every non-entailing clause and produced 9, then 13, findings for one amendment; restricting it to explicit contradictions removed the legitimate case of a contract silent on a new mandatory requirement. The final rule, introduced below, decides per contract.
+The original Detect prompt told the model that ``a clause that is vague or silent on a specific mandatory protection \dots\ CONTRADICTS the requirement rather than being NEUTRAL'', and its decision rule turned every contradiction, and every neutral verdict given with high confidence, into a finding. Rewriting the prompt, narrowing routing and adding a cross-clause check for children's data reduced the problem without removing it.
 
 % =====================================================================
 \section{Method}
@@ -127,9 +112,9 @@ We compose four changes, each addressing one way silence leaks into findings.
 
 \textbf{(1) Conservative prompt.} The model is told that a clause that ``does not deal with this requirement's subject'' or is ``merely silent on an adjacent obligation'' is \textsc{Neutral}, and that \textsc{Contradicts} is reserved for a clause that itself creates the problem.
 
-\textbf{(2) Subject routing.} Each requirement is checked only against clauses of the type that governs its subject (e.g.\ breach notification only against \textsc{Breach Notification} clauses), instead of a broad map that checks, say, every data-processing clause against every regulation.
+\textbf{(2) Subject routing.} Each requirement is checked only against clauses of the type that governs its subject (e.g.\ breach notification only against \textsc{Breach Notification} clauses), instead of, say, every data-processing clause against every regulation.
 
-\textbf{(3) Override-aware reading.} A clause is classified on its \emph{effective text}: its own text followed by every provision that overrides it, found by traversing \textsc{Overrides} edges up to three hops in the graph.
+\textbf{(3) Override-aware reading.} A clause is classified on its \emph{effective text}, that is, its own text followed by every provision that overrides it, found by traversing \textsc{Overrides} edges up to three hops in the graph.
 
 \textbf{(4) Contract-level decision.} Let $V(c,r)$ be the multiset of verdicts for $r$ over the clauses of $c$ routed to $r$. The number of findings is
 \begin{equation}
@@ -140,7 +125,7 @@ f(c,r)=\begin{cases}
 0 & \text{otherwise.}
 \end{cases}
 \end{equation}
-A violation is still reported on the clause that causes it; silence becomes at most one gap finding, and only for a mandatory requirement that nothing in the contract satisfies (Fig.~\ref{fig:method}).
+A violation is still reported on the clause that causes it, while silence becomes at most one gap finding, and only for a mandatory requirement that nothing in the contract satisfies (Fig.~\ref{fig:method}). Whether a requirement is mandatory is a property of the rule set by the playbook author, not of the contract.
 
 \begin{figure}[t]
 \centering
@@ -180,48 +165,25 @@ A violation is still reported on the clause that causes it; silence becomes at m
 \end{tikzpicture}
 \caption{Two decision rules applied to the same verdicts for a mandatory requirement $r$ (``notify breaches within 72 hours''). In both contracts the clause-level rule reports silence as a violation, whereas the contract-level rule reports nothing in (a) and a single gap in (b).}
 \label{fig:method}
-\end{figure} Whether a requirement is mandatory is a property of the rule set by the playbook author, not of the contract.
+\end{figure}
 
-\textbf{Configurations.} We add the changes one at a time: \textbf{A}~the original checker (original prompt, broad routing, clause-level rule); \textbf{B}~A + conservative prompt; \textbf{C}~B + subject routing; \textbf{D}~C + contract-level decision (the full method). \textbf{D$-$ET} is D without override-aware reading. \textbf{P} is PactScan's Detect agent in its deployed form, run without modification, and its gap logic is limited to the two children's-data requirements. All configurations use the same batched call, client, temperature and model.
+\textbf{Configurations.} We add the changes one at a time. \textbf{A} is the original checker (original prompt, broad routing, clause-level rule); \textbf{B} is A + conservative prompt; \textbf{C} is B + subject routing; \textbf{D} is C + contract-level decision (the full method). \textbf{D$-$ET} is D without override-aware reading. \textbf{P} is PactScan's Detect agent in its deployed form, run without modification, and its gap logic is limited to the two children's-data requirements. All configurations use the same batched call, client, temperature and model.
 
 % =====================================================================
 \section{Benchmark}
 
-\begin{table}[t]
-\centering
-\caption{The benchmark.}
-\label{tab:bench}
-\begin{tabular}{lr}
-\toprule
-Base contracts (one per sector) & 6 \\
-Contracts & 138 \\
-Requirements (8 playbook, 3 DPDP, 2 GDPR) & 13 \\
-Graded (contract, requirement) pairs & 1,752 \\
-\quad correct answer NONE & 1,599 \\
-\quad correct answer VIOLATES & 96 \\
-\quad correct answer GAP & 57 \\
-Pairs excluded as ambiguous & 42 \\
-Traps: hidden violation / hidden fix & 12 / 12 \\
-\bottomrule
-\end{tabular}
-\end{table}
+\textbf{Construction.} Six base DPAs pair a fictional Indian company with a vendor in different sectors (health-tech, retail, ed-tech, fintech, HR/payroll, logistics), differing in parties, data categories, locations, notification windows and liability floors, and written in three drafting styles. Each base contains nine topic clauses (breach notification, liability cap, processing details, children's data, sub-processors, data location, deletion on termination, audit rights, lawful basis) and four filler clauses, and complies with all 13 requirements. Each base yields 23 contracts, namely the base itself, nine \emph{silent} variants (one topic clause removed), nine \emph{breaks} variants (one topic clause rewritten so that it breaks its requirements) and four \emph{trap} variants for breach notification and deletion, in which a later amendment either hides a violation behind a compliant clause or cures a non-compliant one. Since every variant differs from its base in exactly one place, any change in a checker's output can be attributed to that change. With 13 requirements (8 playbook, 3 DPDP, 2 GDPR), the 138 contracts give 1,752 graded pairs (1,599 NONE, 96 VIOLATES, 57 GAP), and 12 of the contracts hide a violation and 12 hide a fix. The checker is given the benchmark's own clauses, clause types and override links, so parsing and extraction errors are excluded and only the verdict step is measured.
 
-\textbf{Construction.} Six base DPAs pair a fictional Indian company with a vendor in different sectors (health-tech, retail, ed-tech, fintech, HR/payroll, logistics), differing in parties, data categories, locations, notification windows and liability floors, and written in three drafting styles. Each base contains nine topic clauses (breach notification, liability cap, processing details, children's data, sub-processors, data location, deletion on termination, audit rights, lawful basis) and four filler clauses (services, confidentiality, indemnity, governing law), and complies with all 13 requirements. Each base yields 23 contracts, namely the base itself, nine \emph{silent} variants (one topic clause removed), nine \emph{breaks} variants (one topic clause rewritten so that it breaks its requirements) and four \emph{trap} variants. In the traps, which cover breach notification and deletion, a later amendment either hides a violation behind a compliant clause or cures a non-compliant one. Since every variant differs from its base in exactly one place, any change in a checker's output can be attributed to that change.
-
-\textbf{Labels.} Every requirement belongs to a single topic, and its correct answer follows from which topic was changed and in what way. Of the nine topics, seven are mandatory. The other two are not, because silence on them breaks nothing. A contract with no liability-cap clause has unlimited liability, and the rule only forbids a cap that is too low; a contract that does not state a lawful basis is also acceptable, since having a lawful ground is the Data Fiduciary's own statutory duty. The children's-data rules do not bind the payroll base, which processes only employees' data. The company's playbook requires every other base to address children's data explicitly, so silence on it counts as a gap. Before any model was run, all labels were reviewed clause by clause against the requirement texts. This review led us to rewrite three breaking clauses that also touched another topic's rule and to exclude 42 pairs on which careful readers could disagree (Table~\ref{tab:bench}).
-
-\textbf{Scope of the measurement.} Because the checker is given the benchmark's own clauses, clause types and override links, parsing and extraction errors are excluded, and only the verdict step is measured.
+\textbf{Labels.} Each requirement belongs to one topic, so its correct answer follows from which topic was changed and in what way. Seven of the nine topics are mandatory. Silence on the other two breaks nothing, because a contract without a liability cap has unlimited liability (the rule forbids only a cap that is too low) and having a lawful ground is the Data Fiduciary's own statutory duty. The children's-data rules do not bind the payroll base, which processes only employees' data; the playbook requires every other base to address children's data explicitly, so silence on it counts as a gap. Before any model was run, a clause-by-clause review of all labels led us to rewrite three breaking clauses that touched another topic's rule and to exclude 42 pairs on which careful readers could disagree.
 
 % =====================================================================
 \section{Experimental Setup}
 
-\textbf{Models.} gpt-oss-120b and gpt-oss-20b~\cite{openai2025gptoss} and qwen3.8-27b~\cite{qwen}, served by GroqCloud. Each run is pinned to a single model, with no fallback to another, and uses temperature 0.2.
-
-\textbf{Controls.} Every run has its own private response cache, which means repeated runs never reuse one another's answers. Within a run, an identical question asked under the same system prompt is answered only once, so each distinct clause text receives exactly one verdict. The system's cache key does not include the system prompt, and for this reason each prompt version is given its own cache. All verdicts are stored together with the model and a timestamp, and runs can be resumed.
+\textbf{Models and controls.} We use gpt-oss-120b and gpt-oss-20b~\cite{openai2025gptoss} and qwen3.8-27b~\cite{qwen}, served by GroqCloud at temperature 0.2, with each run pinned to a single model and no fallback. Every run has its own response cache, so repeated runs never reuse one another's answers, and within a run each distinct question under a given system prompt is answered once. Each prompt version has its own cache, because the system's cache key does not include the system prompt.
 
 \textbf{Statistics.} Confidence intervals (95\%) are obtained from a bootstrap~\cite{efron1993bootstrap} over contracts with 2,000 resamples, and per-pair correctness is compared with exact McNemar tests~\cite{mcnemar1947}. These figures overstate certainty, since variants of one base share 12 of their 13 clauses and their pairs are therefore not independent. As a more conservative check we also report a sign test that treats each (base, model) combination as a single unit. Agreement across runs and models is reported as the share of pairs answered identically and Fleiss' $\kappa$~\cite{fleiss1971}.
 
-\textbf{Experiments.} E1 runs all configurations on gpt-oss-120b over all 138 contracts. E2 runs A and C/D on the two other models. E3 runs A and C/D five independent times on two bases (46 contracts); it was run on gpt-oss-20b because the free daily token quota for gpt-oss-120b was exhausted by E1 and E4. E4 re-checks contracts against four simulated DPDP amendments through PactScan's regulation-update path.
+\textbf{Experiments.} E1 runs all configurations on gpt-oss-120b over all 138 contracts. E2 runs A and C/D on the two other models. E3 runs A and C/D five times on two bases (46 contracts) on gpt-oss-20b, since E1 and E4 used up the free daily quota for gpt-oss-120b. E4 re-checks contracts against four simulated DPDP amendments.
 
 % =====================================================================
 \section{Results}
@@ -246,119 +208,27 @@ P\; PactScan as deployed & 14.1 [12.1, 16.1] & 80.7 [67.7, 95.2] & 77.1 & 36.6 &
 \end{tabular}
 \end{table*}
 
-\begin{figure}[t]
-\centering
-\begin{tikzpicture}
-\begin{axis}[
-  width=\columnwidth, height=4.1cm,
-  ybar, bar width=6pt, ymin=0, ymax=100,
-  ylabel={\%}, ylabel style={font=\scriptsize},
-  symbolic x coords={A,B,C,D,D$-$ET,P},
-  xtick=data, tick label style={font=\scriptsize},
-  nodes near coords, nodes near coords style={font=\tiny, rotate=90, anchor=west},
-  every node near coord/.append style={/pgf/number format/fixed, /pgf/number format/precision=0},
-  legend style={font=\scriptsize, at={(0.5,1.02)}, anchor=south, legend columns=2, draw=none},
-  title={(a) E1 ablation, gpt-oss-120b}, title style={font=\scriptsize\bfseries, yshift=3.5ex},
-  enlarge x limits=0.1]
-\addplot[fill=red!55, draw=red!70!black] coordinates {(A,60.9) (B,59.9) (C,51.7) (D,19.6) (D$-$ET,20.3) (P,14.1)};
-\addplot[fill=blue!35, draw=blue!60!black] coordinates {(A,52.6) (B,52.6) (C,63.2) (D,0) (D$-$ET,0) (P,80.7)};
-\legend{False violation rate, Missed gap rate}
-\end{axis}
-\end{tikzpicture}
+Table~\ref{tab:e1} shows the error in full. The original checker flags 60.9\% of the pairs on which nothing is wrong and raises 21.7 findings on a contract that complies with everything, which is close to the 19 observed during development. It also misses half the gaps, because for a removed clause a mandatory requirement often has no clause of a routed type left to ask about. The full method reduces the false violation rate to 19.6\%, misses no gap, keeps violation recall at 99\% and raises 2.5 findings on a clean contract. The difference between A and D is significant on matched pairs (691 pairs correct only under D vs.\ 1 only under A; McNemar $p=6.7\times10^{-206}$) and under the sign test in E2.
 
-\vspace{2pt}
-\begin{tikzpicture}
-\begin{axis}[
-  width=\columnwidth, height=3.7cm,
-  ybar, bar width=9pt, ymin=0, ymax=75,
-  ylabel={FVR \%}, ylabel style={font=\scriptsize},
-  symbolic x coords={gpt-oss-120b,gpt-oss-20b,qwen3.8-27b},
-  xtick=data, tick label style={font=\scriptsize},
-  legend style={font=\scriptsize, at={(0.5,1.02)}, anchor=south, legend columns=2, draw=none},
-  title={(b) Original (A) vs.\ full method (D), 95\% CI}, title style={font=\scriptsize\bfseries, yshift=3.5ex},
-  enlarge x limits=0.25,
-  error bars/y dir=both, error bars/y explicit]
-\addplot[fill=gray!45, draw=gray!70!black] coordinates {
-  (gpt-oss-120b,60.9) +- (0,0.95) (gpt-oss-20b,60.8) +- (0,0.95) (qwen3.8-27b,61.2) +- (0,0.9)};
-\addplot[fill=green!45!black!40, draw=green!40!black] coordinates {
-  (gpt-oss-120b,19.6) +- (0,2.15) (gpt-oss-20b,27.1) +- (0,2.35) (qwen3.8-27b,14.1) +- (0,1.45)};
-\legend{A, D}
-\end{axis}
-\end{tikzpicture}
-\caption{(a) Adding the four changes one at a time: only the contract-level decision (D) removes most false violations, and it is also the only configuration that misses no gap. (b) The original checker makes the error at the same rate on every model; the full method reduces it on all three.}
-\label{fig:results}
-\end{figure}
+\textbf{Effect of the prompt.} Moving from A to B changes the false violation rate by only one point (McNemar $p=0.004$), although the prompt changes the model's behaviour dramatically. The share of \textsc{Contradicts}/\textsc{Entails}/\textsc{Neutral} verdicts is 65.0/30.9/4.0\% under A, 7.4/28.2/64.4\% under B and 10.1/40.3/49.6\% under C/D. Under the clause-level rule, however, a neutral verdict given with high confidence is still turned into a finding, and so silence that the prompt has correctly relabelled ends up being reported anyway. Subject routing (C) removes some of these checks (51.7\%), and the contract-level decision (D) removes the rest, with 549 pairs becoming correct and none becoming incorrect between C and D ($p=1.1\times10^{-165}$).
 
-Table~\ref{tab:e1} and Fig.~\ref{fig:results}a show the error in full. The original checker flags 60.9\% of the pairs on which nothing is wrong and raises 21.7 findings on a contract that complies with everything, which is close to the 19 observed during development. It also misses half the gaps: for a removed clause, a mandatory requirement often has no clause of a routed type left to ask about. The full method reduces the false violation rate to 19.6\%, misses no gap, keeps violation recall at 99\% and raises 2.5 findings on a clean contract. The difference between A and D is significant on matched pairs (691 pairs correct only under D vs.\ 1 only under A; McNemar $p=6.7\times10^{-206}$) and under the conservative per-base sign test reported in E2.
-
-\textbf{The prompt is not the fix.} Moving from A to B changes the false violation rate by only one point (McNemar $p=0.004$), although the prompt changes the model's behaviour dramatically (Table~\ref{tab:labels}): the share of \textsc{Contradicts} verdicts falls from 65.0\% to 7.4\% and \textsc{Neutral} rises from 4.0\% to 64.4\%. Under the clause-level rule, however, a neutral verdict given with high confidence is still turned into a finding, and so silence that the prompt has correctly relabelled ends up being reported anyway. Subject routing (C) removes some of these checks (51.7\%), and the contract-level decision (D) removes the rest: 549 pairs become correct and none become incorrect between C and D ($p=1.1\times10^{-165}$).
-
-\begin{table}[t]
-\centering
-\caption{Share of raw verdicts by label (gpt-oss-120b, \%).}
-\label{tab:labels}
-\begin{tabular}{lccc}
-\toprule
-Prompt, routing & Contradicts & Entails & Neutral \\
-\midrule
-A\; original, broad & 65.0 & 30.9 & 4.0 \\
-B\; conservative, broad & 7.4 & 28.2 & 64.4 \\
-C/D\; conservative, by subject & 10.1 & 40.3 & 49.6 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\textbf{Effect of override-aware reading on hidden changes.} In trap contracts where an amendment hides a violation, D catches 94.4\% of the violated pairs, compared with only 27.8\% when override-aware reading is removed ($p=8.0\times10^{-7}$ on trap pairs). Where an amendment instead cures a non-compliant clause, reading the clause on its own wrongly flags every such pair (100\%), while with override-aware reading the figure is 33.3\%.
+\textbf{Effect of override-aware reading on hidden changes.} In trap contracts where an amendment hides a violation, D catches 94.4\% of the violated pairs, compared with only 27.8\% when override-aware reading is removed ($p=8.0\times10^{-7}$ on trap pairs). Where an amendment instead cures a clause, reading the clause alone wrongly flags every such pair (100\%), against 33.3\% with override-aware reading.
 
 \textbf{Comparison with the deployed system.} P raises the fewest alarms (14.1\%) but misses 80.7\% of gaps, since its gap logic covers only the children's-data rules. Overall pair accuracy does not differ significantly between D and P ($p=0.21$), yet their errors run in opposite directions. D accepts a modest number of extra alarms for complete gap coverage, which we regard as the better trade-off when a missed gap costs more than a false alarm.
 
 \subsection{E2: Behaviour across models}
 
-\begin{table}[t]
-\centering
-\caption{E2: the original checker (A) and the full method (D) compared on three models (\%, 95\% CI).}
-\label{tab:e2}
-\begin{tabular}{llccc}
-\toprule
-Model & & FVR & MGR & Viol.\ recall \\
-\midrule
-\multirow{2}{*}{gpt-oss-120b} & A & 60.9 [59.9, 61.8] & 52.6 & 100.0 \\
- & D & 19.6 [17.4, 21.7] & 0.0 & 99.0 \\
-\multirow{2}{*}{gpt-oss-20b} & A & 60.8 [59.8, 61.7] & 52.6 & 100.0 \\
- & D & 27.1 [24.7, 29.4] & 0.0 & 99.0 \\
-\multirow{2}{*}{qwen3.8-27b} & A & 61.2 [60.3, 62.1] & 52.6 & 99.0 \\
- & D & 14.1 [12.7, 15.6] & 0.0 & 88.5 \\
-\bottomrule
-\end{tabular}
-\end{table}
+Under A, all three models make the error at the same rate (60.8--61.2\%), which places its source in the design of the checker rather than in any particular model. Under D, every model improves and none of them misses a gap (MGR falls from 52.6\% to 0.0\% on each). On gpt-oss-20b the false violation rate falls from 60.8\% [59.8, 61.7] to 27.1\% [24.7, 29.4] with violation recall at 99.0\% under D (100.0\% under A), and on qwen3.8-27b from 61.2\% [60.3, 62.1] to 14.1\% [12.7, 15.6] with violation recall at 88.5\% (99.0\% under A). McNemar tests give $p<10^{-168}$ for each model, and under the conservative test D has a lower false violation rate than A in \textbf{18 of 18} (base, model) units (exact sign test, $p=7.6\times10^{-6}$). Qwen has the lowest false violation rate but also catches only 38.9\% of hidden violations in trap contracts, so model-specific weaknesses remain.
 
-Under A, all three models make the error at the same rate (60.8--61.2\%), which places its source in the design of the checker rather than in any particular model. Under D, every model improves (Table~\ref{tab:e2}, Fig.~\ref{fig:results}b), and none of them misses a gap. McNemar tests give $p<10^{-168}$ for each model. Under the conservative test, D has a lower false violation rate than A in \textbf{18 of 18} (base, model) units (exact sign test, $p=7.6\times10^{-6}$). Qwen reaches the lowest false violation rate but also the lowest violation recall (88.5\%), and catches only 38.9\% of hidden violations in trap contracts, so the method's gains do not remove model-specific weaknesses.
+Under A the three models answer 99.3\% of pairs identically (Fleiss' $\kappa=0.99$) because they all flag nearly everything, whereas under D they agree on 82.0\% ($\kappa=0.70$), so agreement among models is not evidence of correctness.
 
-\textbf{Agreement is not accuracy.} Under A the three models answer 99.3\% of pairs identically (Fleiss' $\kappa=0.99$), largely because they all flag nearly everything; under D they agree on 82.0\% ($\kappa=0.70$), disagreeing on the genuinely subtle pairs. High agreement among models should not be read as evidence of correctness.
+\subsection{E3: Stability across runs}
 
-\subsection{E3: are the results stable?}
-We ran A and C/D five independent times on gpt-oss-20b over the 46 contracts of two bases (584 graded pairs): the E2 run restricted to these contracts and four further runs, each with its own empty cache (Table~\ref{tab:e3}).
+We ran A and C/D five independent times on gpt-oss-20b over the 46 contracts of two bases (584 graded pairs), each run with its own empty cache. All five runs agree on 99.3\% of pairs under A (Fleiss' $\kappa=0.99$), 83.4\% under C ($\kappa=0.85$) and 78.4\% under D ($\kappa=0.79$), and the per-run false violation rate ranges over 60.5--61.1\%, 45.9--56.6\% and 22.6--30.8\% respectively. In every run D's false violation rate is about half of A's or lower (30.8\% against 60.9\% in the worst run; mean 26.5\% against 60.8\%), D misses no gap in any run, and its violation recall stays between 96.9\% and 100\%. A is stable because it flags nearly everything, while under D 21.6\% of pairs change answer in at least one of the five runs. The pairs on which the models disagree in E2 are the same ones that a single model is unsure about, which is consistent with the observation that agreement across samples tracks a model's reliability~\cite{wang2023selfconsistency}. Findings that change on a re-run are therefore best sent to human review.
 
-\begin{table}[t]
-\centering
-\caption{E3: five independent runs of gpt-oss-20b on 46 contracts (584 pairs). FVR range is the lowest--highest per-run false violation rate (\%).}
-\label{tab:e3}
-\begin{tabular}{lccc}
-\toprule
-Set-up & All runs agree (\%) & Fleiss' $\kappa$ & FVR range \\
-\midrule
-A & 99.3 & 0.99 & 60.5--61.1 \\
-C & 83.4 & 0.85 & 45.9--56.6 \\
-D & 78.4 & 0.79 & 22.6--30.8 \\
-\bottomrule
-\end{tabular}
-\end{table}
+\subsection{E4: Re-checking contracts when the law changes}
 
-The headline result is stable: in every run D's false violation rate is about half of A's or lower (30.8\% against 60.9\% in the worst run; mean 26.5\% against 60.8\%), D misses no gap in any run, and its violation recall stays between 96.9\% and 100\%. Configuration A gives almost identical answers in every run, again because it flags nearly everything. D varies more ($\kappa=0.79$; 21.6\% of pairs change answer in at least one of the five runs), and its false violation rate moves by up to eight points between runs. The pairs on which the models disagree in E2 are the same ones that a single model is unsure about, which is consistent with the observation that agreement across samples tracks a model's reliability~\cite{wang2023selfconsistency}. A deployment should therefore treat findings that are not stable across a re-run as candidates for human review rather than as settled verdicts.
-
-\subsection{E4: re-checking contracts when the law changes}
-
-PactScan's regulation-update path embeds a newly added rule, retrieves the related clauses of each existing contract (top-15 by cosine similarity, threshold 0.35), classifies each against the rule, and turns the verdicts into findings. We simulated four DPDP amendments, namely a 72-hour processor breach-notice duty, erasure within 30 days with written confirmation, a transfer restriction that also requires naming storage locations, and a brand-new duty to name a grievance contact in India. We then re-checked the 46 contracts of two bases (184 checks: 122 NONE, 10 VIOLATES, 52 GAP) under the three rules the system actually went through (Table~\ref{tab:e4}).
+PactScan's regulation-update path embeds a new rule, retrieves each contract's related clauses (top-15 by cosine similarity, threshold 0.35) and classifies them against it. We simulated four DPDP amendments, namely a 72-hour processor breach-notice duty, erasure within 30 days with written confirmation, a transfer restriction that also requires naming storage locations, and a new duty to name a grievance contact in India. We then re-checked the 46 contracts of two bases (184 checks: 122 NONE, 10 VIOLATES, 52 GAP) under the three rules the system actually went through (Table~\ref{tab:e4}).
 
 \begin{table}[t]
 \centering
@@ -375,9 +245,9 @@ Contract-level (final) & 31.1 & \textbf{0.0} & \textbf{76.5} & 0.58 \\
 \end{tabular}
 \end{table}
 
-The first rule reproduces the incident from development: every compliant contract is flagged, with 12.15 findings per check on average. Restricting findings to contradictions removes 69 points of false alarms but misses 96.2\% of gaps, among them every contract that is silent on the new grievance-contact duty. This is the same over-correction that we observed during development. The contract-level rule keeps the lower false alarm rate and recovers every gap (F1 76.5\%). Violation recall is 100\% under all three rules, and retrieval surfaced the relevant clause for every real violation; the retrieval threshold is permissive (12.8 related clauses per check on average), so errors here come from the verdict and the decision rule, not from retrieval.
+The first rule reproduces the development incident, flagging every compliant contract with 12.15 findings per check on average. Restricting findings to contradictions removes 69 points of false alarms but misses 96.2\% of gaps, among them every contract that is silent on the new grievance-contact duty. The contract-level rule keeps the lower false alarm rate and recovers every gap (F1 76.5\%). Violation recall is 100\% under all three rules and retrieval (12.8 related clauses per check) surfaced the relevant clause for every real violation, so the errors come from the verdict and the decision rule.
 
-The remaining false alarms are instructive. For the erasure amendment, 36 of 40 compliant contracts were flagged because the model marked the processing-details clause, which states that data is deleted within 30 days, as \emph{contradicting} the amendment for not also requiring written confirmation, even though the contract's deletion clause does require certified deletion. Under the contract-level rule any contradiction takes precedence, so a merely \emph{incomplete} neighbouring clause outvotes the clause that satisfies the rule: the same silence-as-violation error, moved into the \textsc{Contradicts} label. The other two false alarms are contracts whose deletion or breach clause is cured by a later amendment; this path, unlike Detect, classifies clauses without their overrides.
+For the erasure amendment, 36 of 40 compliant contracts were flagged because the model marked the processing-details clause (data deleted within 30 days) as \emph{contradicting} the amendment for not also requiring written confirmation, although the deletion clause does require certified deletion. Since any contradiction takes precedence under the contract-level rule, this \emph{incomplete} clause outvotes the one that satisfies the rule, so the silence-as-violation error reappears inside the \textsc{Contradicts} label. The other two false alarms come from amendments that cure a clause, because this path, unlike Detect, ignores overrides.
 
 \subsection{Where the remaining false alarms come from}
 
@@ -400,39 +270,28 @@ Playbook: processing details & 1.9 & 50.9 & 0.0 \\
 \end{tabular}
 \end{table}
 
-D's remaining false alarms are not spread evenly (Table~\ref{tab:perreq}). Five playbook rules, each stating a single duty (breach-notification window, sub-processor approval, data location, deletion on termination, audit rights), have a false violation rate of 0\% on every model. The worst two are \emph{compound} requirements. DPDP Section 8 bundles security measures, data accuracy and breach notification; the models mark a compliant breach clause as \emph{contradicting} it because it does not also address data accuracy, which is a duty of the Data Fiduciary rather than of the processor. GDPR Article 8 includes an age threshold; the models mark a clause requiring verifiable parental consent for every child as incomplete because it does not state the threshold, although it is stricter than the article. Both are the same silence-as-violation error, now inside a single requirement. Excluding these two requirements, D's false violation rate on gpt-oss-120b would be 8.4\%. The liability-cap figure comes from a single base whose liability clause the model judged non-compliant (the base is not the same for every model); because the variants of that base share the clause, the error repeats across them. For every model, the hardest base is the ed-tech contract, which is the only one that actually processes children's data (D: 44.4\% on gpt-oss-120b, compared with 10.8--16.2\% for the other bases).
+D's remaining false alarms are not spread evenly (Table~\ref{tab:perreq}). Five playbook rules that each state a single duty (breach-notification window, sub-processor approval, data location, deletion on termination, audit rights) have a false violation rate of 0\% on every model. The worst two are \emph{compound} requirements. DPDP Section 8 bundles security measures, data accuracy and breach notification, and the models mark a compliant breach clause as \emph{contradicting} it because it does not also address data accuracy, which is a duty of the Data Fiduciary rather than of the processor. GDPR Article 8 includes an age threshold, and the models mark a clause requiring verifiable parental consent for every child as incomplete because it does not state the threshold, although it is stricter than the article. Both are the silence-as-violation error inside a single requirement, and without them D's false violation rate on gpt-oss-120b would be 8.4\%. The liability-cap figure is one base's liability clause judged non-compliant (not the same base for every model), repeated across its variants. For every model, the hardest base is the ed-tech contract, which is the only one that actually processes children's data (D: 44.4\% on gpt-oss-120b, compared with 10.8--16.2\% for the other bases).
 
 % =====================================================================
 \section{Discussion}
 
-\textbf{Choice of decision unit.} The central lesson is that the error comes less from what the model says than from how its answers are aggregated. A clause-level rule asks a question the contract-level answer does not depend on; a better prompt changes the model's words but not the rule's output. Self-reported confidence does not rescue the clause-level rule either. Models can partly estimate their own correctness~\cite{kadavath2022know}, but in the original rule it was precisely the use of ``high-confidence \textsc{Neutral}'' as a trigger that turned correctly relabelled silence back into findings. When the decision was moved to the contract and violations were kept attached to the clauses that cause them, most false alarms disappeared and no gaps were lost. PactScan's regulation-update feature showed the same pattern. There, changing \emph{what is flagged} (every non-entailing clause $\to$ contradictions only) simply exchanged one error for another, whereas changing \emph{the unit flagged} (clause $\to$ contract) fixed both.
+\textbf{Choice of decision unit.} The error comes less from what the model says than from how its answers are aggregated, so a better prompt changes the model's words but not the output of a clause-level rule. Self-reported confidence does not rescue that rule either. Models can partly estimate their own correctness~\cite{kadavath2022know}, but in the original rule it was precisely the use of ``high-confidence \textsc{Neutral}'' as a trigger that turned correctly relabelled silence back into findings. In PactScan's regulation-update feature, changing \emph{what is flagged} (every non-entailing clause $\to$ contradictions only) simply exchanged one error for another, whereas changing \emph{the unit flagged} (clause $\to$ contract) fixed both.
 
-\textbf{Decomposing compound requirements.} The residual errors point to an inexpensive next step, in which each requirement is expressed as a set of atomic duties (security; accuracy; breach notification) and verdicts are aggregated per duty. Silence on one duty could then no longer contradict another.
-
-\textbf{Checking contradictions against satisfying clauses.} A second residual pattern appears in E4. When a clause addresses only part of a requirement, it is labelled \textsc{Contradicts} for omitting the rest, and the contract-level rule allows this label to override a clause that does satisfy the requirement. A natural refinement would be to compare each contradiction with the contract's satisfying clauses before it is reported, or, as above, to decompose the requirement.
-
-\textbf{Recommendation for the deployed system.} We recommend that the deployed checker apply its contract-level gap rule to every mandatory requirement, not only to the two children's-data requirements. E1 indicates that doing so closes an 80.7\% missed-gap rate at the cost of a few extra alarms.
+\textbf{Next steps.} Expressing each requirement as atomic duties (security; accuracy; breach notification) and aggregating per duty would stop silence on one duty from contradicting another. Checking each contradiction against the contract's satisfying clauses before reporting it would address the E4 pattern, in which a clause that covers only part of a requirement is labelled \textsc{Contradicts} and outvotes a clause that satisfies it. For the deployed system, applying the contract-level gap rule to every mandatory requirement, not only the two children's-data ones, would close an 80.7\% missed-gap rate (E1) at the cost of a few extra alarms.
 
 % =====================================================================
 \section{Threats to Validity and Limitations}
 
-\textbf{Synthetic contracts.} The benchmark is synthetic, with six bases in three drafting styles; real DPAs are longer and messier. Its matched design is what makes silence measurable, but results on real contracts may differ.
+\textbf{Synthetic contracts and scope.} The benchmark is synthetic (six bases, three drafting styles), and real DPAs are longer and messier. Since clause types and override links are given, 36 of the 57 gaps have no clause of their subject left and are decided without the model; all 21 gaps decided from model verdicts were caught. End-to-end accuracy with automatic extraction is not measured.
 
-\textbf{Labels.} Labels were written and reviewed against the requirement texts by the project team, not by practising lawyers, and agreement with a second human annotator has not yet been measured; we release a blind annotation sheet of 120 stratified pairs over 83 anonymised contracts, with a script that reports Cohen's $\kappa$~\cite{cohen1960kappa}, so that it can be. As an automated audit (not a substitute for a human annotator), a model used in no experiment (gemini-3.5-flash-lite, temperature 0) labelled the sheet from the same instructions: it agreed on 101 of 120 pairs ($\kappa=0.73$) and on all 60 \textsc{None} pairs. We checked each of the 19 disagreements against the contract text and found no label error: 12 are model errors (seven explicit violations of a non-mandatory rule called acceptable because the rule is not mandatory; a missing breach-notice or parental-consent clause accepted), two name a violation as a gap, and five follow from the playbook convention above that every DPA must address children's data. Two topics are treated as non-mandatory and GDPR is applied as a second standard regardless of territorial scope; these are stated assumptions.
+\textbf{Labels.} Labels were written by the project team, not by practising lawyers, and no second human annotator has been measured yet; we release a blind sheet of 120 stratified pairs over 83 anonymised contracts with a script that reports Cohen's $\kappa$~\cite{cohen1960kappa}. As an automated audit, a model used in no experiment (gemini-3.5-flash-lite, temperature 0) labelled the sheet from the same instructions and agreed on 101 of 120 pairs ($\kappa=0.73$), including all 60 \textsc{None} pairs. None of the 19 disagreements revealed a label error (12 are model errors, two name a violation as a gap, five follow from the children's-data convention). Treating two topics as non-mandatory and applying GDPR regardless of territorial scope are stated assumptions.
 
-\textbf{Verdict step only.} Clause types and override links are given, so 36 of the 57 gaps involve a requirement with no clause of its subject left in the contract and are decided without the model; the remaining 21 gaps were decided from model verdicts, and all 21 were caught. End-to-end accuracy with automatic extraction is not measured.
-
-\textbf{Dependence.} Variants share clauses and each distinct question is answered once per run, so pair-level tests overstate certainty; the per-base sign test is our conservative check.
-
-\textbf{Models and settings.} Three open models on one provider, at a single temperature; free-tier quotas limited E3 and E4 to two bases and moved E3 to gpt-oss-20b. E4's amendments are simulated, and its re-check path classifies clauses without their overrides.
+\textbf{Dependence and settings.} Pair-level tests overstate certainty because variants share clauses. We used three open models on one provider at a single temperature, and free-tier quotas limited E3 and E4 to two bases. E4's amendments are simulated, and its re-check path classifies clauses without their overrides.
 
 % =====================================================================
 \section{Conclusion}
 
-Clause-by-clause LLM compliance checking mistakes silence for violation: on a matched benchmark of DPDP vendor DPAs, about 61\% of pairs on which nothing is wrong were flagged by every model tested. A conservative prompt changes the model's verdicts but not this outcome; deciding at the level of the contract, with subject routing and override-aware reading, cuts false violations to 14--27\% across models, misses no mandatory gap and keeps violation recall at 88--99\%, and the gain repeats across independent runs, although about one pair in five changes answer in at least one of five runs. When contracts are re-checked against new regulations, the same contract-level rule avoids both the flood of false alarms and the hidden gaps that the two earlier rules produced. The remaining errors point to compound requirements, and to incomplete clauses read as contradictions, as the next targets. Beyond the verdict step, three questions about the same pipeline remain open: whether an AI-drafted redline, once approved, actually resolves the finding it was written for when the contract is re-checked; whether the model's stated confidence predicts which verdicts are wrong; and how much of the remaining disagreement between models disappears under a larger, lawyer-labelled benchmark. We release the benchmark, harness and raw verdicts to support further work on compliance checking under the DPDP Act.
-
-\section*{Data and Code Availability}
-The benchmark, the experiment harness, the raw model verdicts and the scripts that produce every number in this paper are in the \texttt{research/} folder of the project repository, \url{https://github.com/saurabh-1702/PactScan-AI} (branch \texttt{research/silence-not-violation}).
+Clause-by-clause LLM compliance checking mistakes silence for violation, and on a matched benchmark of DPDP vendor DPAs every model tested flagged about 61\% of the pairs on which nothing is wrong. A conservative prompt changes the model's verdicts but not this outcome. Deciding at the level of the contract, with subject routing and override-aware reading, cuts false violations to 14--27\% across models, misses no mandatory gap and keeps violation recall at 88--99\%, and the gain repeats across runs and when contracts are re-checked against new regulations. The remaining errors point to compound requirements and incomplete clauses read as contradictions. Future work will test whether approved AI-drafted redlines resolve their findings, whether stated confidence predicts wrong verdicts, and a larger, lawyer-labelled benchmark. The benchmark, harness, raw verdicts and scoring scripts are available at \url{https://github.com/saurabh-1702/PactScan-AI} (branch \texttt{research/silence-not-violation}).
 
 \bibliographystyle{IEEEtran}
 \bibliography{references}
