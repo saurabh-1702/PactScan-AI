@@ -43,3 +43,9 @@ python research/annotation/score.py
 It prints the agreement and Cohen's kappa, lists every disagreement, and writes
 `out/agreement.json`. Reading guide: kappa above 0.8 is "almost perfect" agreement,
 and 0.6–0.8 is "substantial".
+
+## AI label audit (done, not a human annotator)
+
+`llm_audit.py` gave the same sheet to a model used in no experiment; agreement and the
+hand review of every disagreement are in `LLM_AUDIT_REVIEW.md` (84.2%, kappa 0.73,
+no label errors found). A human second annotator is still the stronger check.

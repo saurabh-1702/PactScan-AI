@@ -1,0 +1,173 @@
+{
+ "items": 120,
+ "raw_agreement": 0.8416666666666667,
+ "cohen_kappa": 0.7308781869688384,
+ "confusion": {
+  "NONE": {
+   "NONE": 60
+  },
+  "VIOLATES": {
+   "VIOLATES": 26,
+   "GAP": 3,
+   "NONE": 7
+  },
+  "GAP": {
+   "NONE": 9,
+   "GAP": 15
+  }
+ },
+ "disagreements": [
+  {
+   "item": "Q002",
+   "contract": "b4_silent_breach_notification",
+   "requirement": "dpdp_s8",
+   "benchmark": "GAP",
+   "annotator": "NONE",
+   "notes": "The contract is silent on the Data Fiduciary's obligation to report breaches to the Board and Data Principals, but since this is a requirement on the Data Fiduciary (the Company) rather than the Processor, silence does not constitute a violation or gap under the contract."
+  },
+  {
+   "item": "Q003",
+   "contract": "b1_breaks_dpa_fields",
+   "requirement": "pb_mandatory_dpa_fields",
+   "benchmark": "VIOLATES",
+   "annotator": "GAP",
+   "notes": "The contract leaves the categories of personal data, data principals, and retention periods to be agreed upon later and does not actually specify them as required by the mandatory rule."
+  },
+  {
+   "item": "Q006",
+   "contract": "b4_breaks_lawful_basis",
+   "requirement": "gdpr_art6",
+   "benchmark": "VIOLATES",
+   "annotator": "NONE",
+   "notes": "The requirement regarding the lawfulness of processing is not mandatory under the evaluation framework, so silence or specific provisions do not constitute a violation or gap."
+  },
+  {
+   "item": "Q009",
+   "contract": "b4_silent_children_data",
+   "requirement": "gdpr_art8",
+   "benchmark": "GAP",
+   "annotator": "NONE",
+   "notes": "The requirement is inapplicable as the contract involves transaction-ledger hosting for financial account holders and does not involve processing children's personal data."
+  },
+  {
+   "item": "Q018",
+   "contract": "b2_silent_children_data",
+   "requirement": "gdpr_art8",
+   "benchmark": "GAP",
+   "annotator": "NONE",
+   "notes": "The processing involves adult loyalty-programme members and does not involve children's data, so the requirements regarding child consent do not apply."
+  },
+  {
+   "item": "Q020",
+   "contract": "b4_breaks_dpa_fields",
+   "requirement": "pb_mandatory_dpa_fields",
+   "benchmark": "VIOLATES",
+   "annotator": "GAP",
+   "notes": "The contract fails to specify the categories of personal data, categories of data principals, and retention periods, stating instead that these will be agreed between the parties from time to time."
+  },
+  {
+   "item": "Q024",
+   "contract": "b5_breaks_breach_notification",
+   "requirement": "dpdp_s8",
+   "benchmark": "VIOLATES",
+   "annotator": "GAP",
+   "notes": "The contract fails to address the Data Fiduciary's mandatory obligation under the DPDP Act to notify the Data Protection Board and affected Data Principals in the event of a personal data breach."
+  },
+  {
+   "item": "Q025",
+   "contract": "b6_silent_children_data",
+   "requirement": "gdpr_art8",
+   "benchmark": "GAP",
+   "annotator": "NONE",
+   "notes": "The processing involves delivery-route optimization for the company's shipment recipients and does not concern children's personal data or information society services requiring child consent."
+  },
+  {
+   "item": "Q035",
+   "contract": "b3_breaks_lawful_basis",
+   "requirement": "dpdp_s4",
+   "benchmark": "VIOLATES",
+   "annotator": "NONE",
+   "notes": "The requirement regarding consent for processing personal data is not mandatory under the applicable rule, so the silence or provisions in the contract do not constitute a violation or gap."
+  },
+  {
+   "item": "Q049",
+   "contract": "b1_silent_children_data",
+   "requirement": "pb_verifiable_parental_consent",
+   "benchmark": "GAP",
+   "annotator": "NONE",
+   "notes": "The requirement does not apply because the contract involves processing patient and employee data and contains no provisions regarding children's or minors' personal data."
+  },
+  {
+   "item": "Q050",
+   "contract": "b2_silent_breach_notification",
+   "requirement": "dpdp_s8",
+   "benchmark": "GAP",
+   "annotator": "NONE",
+   "notes": "The requirement sets forth general obligations of the Data Fiduciary (the Company), and the contract does not restrict or violate these statutory duties."
+  },
+  {
+   "item": "Q068",
+   "contract": "b3_breaks_liability_cap",
+   "requirement": "pb_liability_cap_data_breach",
+   "benchmark": "VIOLATES",
+   "annotator": "NONE",
+   "notes": "Since the requirement regarding liability caps is not mandatory under the benchmark rules, the silence or presence of a cap in the contract is acceptable and results in a NONE label."
+  },
+  {
+   "item": "Q072",
+   "contract": "b1_breaks_lawful_basis",
+   "requirement": "dpdp_s4",
+   "benchmark": "VIOLATES",
+   "annotator": "NONE",
+   "notes": "Since the requirement regarding specific consent grounds is not mandatory, the silence or alternative provisions in the contract do not constitute a violation or a gap."
+  },
+  {
+   "item": "Q081",
+   "contract": "b2_silent_children_data",
+   "requirement": "pb_verifiable_parental_consent",
+   "benchmark": "GAP",
+   "annotator": "NONE",
+   "notes": "The requirement regarding children's data does not apply because the contract's data processing scope is limited to general adult loyalty programme members and does not involve processing personal data of children or minors."
+  },
+  {
+   "item": "Q092",
+   "contract": "b3_silent_children_data",
+   "requirement": "gdpr_art8",
+   "benchmark": "GAP",
+   "annotator": "NONE",
+   "notes": "The contract explicitly acknowledges processing data of students under 18 and handles parental responsibility and consent within the overall lawful basis and processing details."
+  },
+  {
+   "item": "Q094",
+   "contract": "b4_breaks_lawful_basis",
+   "requirement": "dpdp_s4",
+   "benchmark": "VIOLATES",
+   "annotator": "NONE",
+   "notes": "The requirement regarding the grounds for processing and consent is not mandatory under the benchmark rules for this specific provision, making silence or compliance acceptable."
+  },
+  {
+   "item": "Q109",
+   "contract": "b4_breaks_liability_cap",
+   "requirement": "pb_liability_cap_data_breach",
+   "benchmark": "VIOLATES",
+   "annotator": "NONE",
+   "notes": "The requirement regarding liability caps and cross-document changes is not mandatory, so the limitation of liability clause does not result in a violation or gap."
+  },
+  {
+   "item": "Q116",
+   "contract": "b3_silent_children_data",
+   "requirement": "dpdp_s9",
+   "benchmark": "GAP",
+   "annotator": "NONE",
+   "notes": "The contract explicitly acknowledges processing data of children under 18 and relies on EduSpark's warranty of lawful grounds including parental consent, without engaging in prohibited tracking or targeted advertising."
+  },
+  {
+   "item": "Q118",
+   "contract": "b1_breaks_liability_cap",
+   "requirement": "pb_liability_cap_data_breach",
+   "benchmark": "VIOLATES",
+   "annotator": "NONE",
+   "notes": "The requirement regarding liability caps is not mandatory under the applicable legal framework, so the contractual cap of fifty thousand rupees does not constitute a violation."
+  }
+ ]
+}

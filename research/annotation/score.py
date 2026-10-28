@@ -35,6 +35,7 @@ def cohen_kappa(a: list[str], b: list[str]) -> float:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--sheet", default=str(OUT / "sheet.csv"))
+    ap.add_argument("--out", default="agreement.json", help="file name under annotation/out/")
     args = ap.parse_args()
 
     key = json.loads((OUT / "key.json").read_text(encoding="utf-8"))
@@ -68,7 +69,7 @@ def main() -> None:
         "confusion": {g: dict(Counter(t for o, t in zip(ours, theirs) if o == g)) for g in LABELS},
         "disagreements": [dict(zip(("item", "contract", "requirement", "benchmark", "annotator", "notes"), r)) for r in rows],
     }
-    (OUT / "agreement.json").write_text(json.dumps(res, indent=1), encoding="utf-8")
+    (OUT / args.out).write_text(json.dumps(res, indent=1), encoding="utf-8")
     print(f"{n} items  raw agreement {100 * res['raw_agreement']:.1f}%  Cohen's kappa {res['cohen_kappa']:.2f}")
     for r in rows:
         print("  ", *r[:5])

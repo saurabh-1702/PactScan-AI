@@ -23,8 +23,9 @@ Red text in the PDF marks something still to fill in.
 - [x] Repository URL (`saurabh-1702/PactScan-AI`, branch `research/silence-not-violation`).
       **The repository is private**: make it public on GitHub (Settings → General → Danger Zone →
       Change visibility), or reviewers won't be able to open the link.
-- [ ] Second annotator (optional, recommended): see `research/annotation/README.md`. When it's
-      done, put the kappa in the "Labels" paragraph of Threats to Validity.
+- [x] AI label audit: gemini-3.5-flash-lite on the 120-pair blind sheet, 84.2%, kappa 0.73,
+      every disagreement reviewed (`research/annotation/LLM_AUDIT_REVIEW.md`); in the "Labels" paragraph.
+- [ ] Human second annotator (optional, stronger): see `research/annotation/README.md`.
 - [ ] Your college's specific template, if different from plain IEEE conference format.
 - [ ] Read it once end to end: every number in it comes from `research/results/*.json`.
 
@@ -39,4 +40,5 @@ Red text in the PDF marks something still to fill in.
 | E3 table (stability) | `research/results/final.json` → `agreement.repeats` (runs `m_gpt20b` restricted to bases b1–b2, `rep20b_1`–`rep20b_4`; `rep20b_5` was stopped at 24/92 by the daily quota and is not used); per-run FVR range computed on the same 46 contracts |
 | E4 table | `final.json` → `law.law_main` (also `exp4.json`) |
 | All of the above in one file | `score.py --runs main,m_gpt20b,m_qwen,rep20b_1,rep20b_2,rep20b_3,rep20b_4 --compare-runs main,m_gpt20b,m_qwen --repeat-runs m_gpt20b,rep20b_1,rep20b_2,rep20b_3,rep20b_4 --law-runs law_main --name final` |
+| AI label audit (Labels paragraph) | `research/annotation/out/llm_agreement.json`, `research/annotation/LLM_AUDIT_REVIEW.md` |
 | Development incidents (19 findings, 9→13) | `docs/PactScan_AI_Known_Issues_And_Lessons_Learned.md` §10.13, §14.7, §14.15 |

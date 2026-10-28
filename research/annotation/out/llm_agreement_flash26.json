@@ -1,0 +1,68 @@
+{
+ "items": 26,
+ "raw_agreement": 0.7692307692307693,
+ "cohen_kappa": 0.6303317535545025,
+ "confusion": {
+  "NONE": {
+   "NONE": 10
+  },
+  "VIOLATES": {
+   "VIOLATES": 9,
+   "GAP": 2
+  },
+  "GAP": {
+   "NONE": 4,
+   "GAP": 1
+  }
+ },
+ "disagreements": [
+  {
+   "item": "Q002",
+   "contract": "b4_silent_breach_notification",
+   "requirement": "dpdp_s8",
+   "benchmark": "GAP",
+   "annotator": "NONE",
+   "notes": "The requirement sets out general statutory obligations of the Data Fiduciary under Section 8 of the DPDP Act, which the contract is not required to restate."
+  },
+  {
+   "item": "Q003",
+   "contract": "b1_breaks_dpa_fields",
+   "requirement": "pb_mandatory_dpa_fields",
+   "benchmark": "VIOLATES",
+   "annotator": "GAP",
+   "notes": "The DPA defers defining the categories of personal data, data principals, and retention periods to future agreements rather than specifying them in the contract."
+  },
+  {
+   "item": "Q009",
+   "contract": "b4_silent_children_data",
+   "requirement": "gdpr_art8",
+   "benchmark": "GAP",
+   "annotator": "NONE",
+   "notes": "Article 8 of the GDPR sets out obligations for data controllers when obtaining consent for children's data, which does not apply to or need to be included in a processor data processing agreement."
+  },
+  {
+   "item": "Q018",
+   "contract": "b2_silent_children_data",
+   "requirement": "gdpr_art8",
+   "benchmark": "GAP",
+   "annotator": "NONE",
+   "notes": "The processing under this agreement involves adult loyalty-programme members and does not target or involve children's personal data."
+  },
+  {
+   "item": "Q020",
+   "contract": "b4_breaks_dpa_fields",
+   "requirement": "pb_mandatory_dpa_fields",
+   "benchmark": "VIOLATES",
+   "annotator": "GAP",
+   "notes": "The agreement defers specifying the categories of personal data, data principals, and retention periods to future agreements rather than setting them out in the DPA."
+  },
+  {
+   "item": "Q025",
+   "contract": "b6_silent_children_data",
+   "requirement": "gdpr_art8",
+   "benchmark": "GAP",
+   "annotator": "NONE",
+   "notes": "This requirement applies to data controllers obtaining consent from children for information society services, which is not applicable to this B2B delivery logistics processing agreement."
+  }
+ ]
+}
